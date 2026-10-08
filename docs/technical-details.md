@@ -591,6 +591,161 @@ this patch.
 The binary modification and resulting control-flow change are directly
 verifiable.
 
+The patch changes exactly one byte in PROGRAM #1:
+
+```text
+0x0001E1C9  DC -> E0
+```
+
+This changes the instruction at `0x0001E1C8` from a conditional branch:
+
+```asm
+bgt 0x0001E22E
+```
+
+to an unconditional branch:
+
+```asm
+b 0x0001E22E
+```
+
+The resulting control-flow effect is therefore directly established: execution
+at this location always branches to the existing continuation at
+`0x0001E22E` instead of being able to fall through into the additional
+recovery block.
+
+The normal RSSI-dependent beacon-skip selection code is not modified by this
+patch.
+
+### Runtime evidence
+
+The patched firmware has been installed and operated on multiple physical
+Shelly TRV (SHTRV-01) devices.
+
+Runtime testing has shown:
+
+- successful installation of the rebuilt patched GBL,
+- successful boot of patched firmware 2.2.4,
+- normal Wi-Fi operation,
+- normal cloud operation,
+- continued RSSI-dependent beacon-skip selection,
+- successful thermostat calibration,
+- successful valve operation,
+- no recurrence of the targeted recovery sequence during the monitored test
+  periods.
+
+The targeted sequence is:
+
+```text
+Beacon skip error! Attempt recovery
+Enter powersave state 1
+Enter powersave state 3 (skip N)
+```
+
+A second physical-device test also exercised the complete local OTA workflow.
+
+That device was upgraded from original firmware:
+
+```text
+20220202-080736/v2.1.3@d255ad74
+```
+
+to the patched firmware:
+
+```text
+20240619-130912/v2.2.4@ee290818
+```
+
+using the local `ota_server.py`.
+
+After the OTA update, the device successfully booted firmware 2.2.4 and
+subsequently demonstrated Wi-Fi connectivity, cloud connectivity, successful
+calibration and physical valve movement.
+
+The targeted recovery sequence was not observed during the monitored
+post-update period.
+
+These runtime observations are consistent with the intended effect of the
+control-flow modification.
+
+They do not, however, prove behavior under every possible runtime or WLAN
+condition.
+
+### Runtime statistics
+
+Runtime statistics from the second physical-device test reported:
+
+```text
+desired_beacon_skip: 20
+real_beacon_skip:    3
+beacon_err_counter:  0
+```
+
+At the same time, runtime logging showed the firmware entering:
+
+```text
+Enter powersave state 3 (skip 20)
+```
+
+The exact semantic relationship between the reported `real_beacon_skip` field
+and the low-level WLAN beacon-skip configuration has not been established.
+
+For this reason, the value `real_beacon_skip: 3` is documented as an
+observation but is not interpreted as proof that the WLAN subsystem was
+configured with a beacon-skip value of 3.
+
+Likewise, the internal firmware variable involved in the recovery-path
+condition has not been conclusively identified with this statistics field.
+
+The project therefore does not equate the analyzed recovery-condition variable
+with `real_beacon_skip` without additional evidence.
+
+### Limits of the technical conclusion
+
+The following properties are directly established by binary analysis:
+
+- the exact original instruction,
+- the exact patched instruction,
+- the one-byte PROGRAM modification,
+- the resulting unconditional branch,
+- the unchanged branch destination,
+- the unchanged RSSI-dependent beacon-skip selection code,
+- the exact rebuilt GBL differences,
+- the resulting CRC32,
+- the resulting PROGRAM SHA-256,
+- the resulting GBL SHA-256.
+
+Physical-device testing additionally establishes that the patched firmware has
+successfully operated on the tested Shelly TRV hardware under the observed
+conditions.
+
+However, the current evidence does **not** establish:
+
+- the exact semantic meaning of every internal firmware variable involved in
+  the recovery logic,
+- that `real_beacon_skip` directly represents the low-level configured WLAN
+  beacon-skip value,
+- that the targeted recovery behavior occurs under every network
+  configuration,
+- that the patch has been tested under every possible RSSI or WLAN failure
+  condition,
+- long-term stability under all operating conditions,
+- that the observed recovery behavior was the sole or primary cause of battery
+  consumption,
+- a quantified improvement in battery life.
+
+Long-term battery-consumption testing therefore remains separate from
+verification of the binary patch itself.
+
+The strongest current conclusion is that the one-byte modification
+deterministically bypasses the analyzed additional recovery path, that the
+resulting firmware has successfully operated on multiple physical target
+devices, and that the targeted recurring recovery sequence has not reappeared
+during the monitored patched-firmware test periods.
+
+The binary modification and resulting control-flow change are directly
+verifiable.
+
 Runtime testing of the patched firmware has shown operation without recurrence
 of the targeted recovery sequence during the observed test period.
 

@@ -1,17 +1,21 @@
 # Shelly TRV Gen1 2.2.4 Firmware Patcher
 
-Local patching tool for the Shelly TRV (SHTRV-01) firmware 2.2.4 beacon-skip recovery modification.
+Local patching and OTA installation tools for the Shelly TRV (SHTRV-01)
+firmware 2.2.4 beacon-skip recovery modification.
 
 > **Experimental software**
 >
-> This project is currently under development and should be considered experimental.
-> Long-term stability and battery-consumption testing of the firmware modification
-> is still in progress.
+> This project is currently under development and should be considered
+> experimental.
+>
+> The firmware modification has been successfully installed and tested on
+> physical Shelly TRV devices. Long-term stability and battery-consumption
+> testing is still in progress.
 
 ## Purpose
 
-This tool creates a patched Shelly TRV 2.2.4 firmware image from an original
-firmware file supplied locally by the user.
+This project creates a patched Shelly TRV 2.2.4 firmware image from an
+original firmware file supplied locally by the user.
 
 The patch targets the recurring firmware behavior:
 
@@ -50,7 +54,10 @@ The patcher operates locally and:
 9. validates the final firmware image,
 10. writes the patched GBL locally.
 
-The patched firmware is not uploaded anywhere by this tool.
+The patched firmware is not uploaded anywhere by the patching tool.
+
+The included OTA server can subsequently make the locally generated patched
+firmware available to a Shelly TRV on the user's local network.
 
 ## Supported firmware
 
@@ -75,13 +82,138 @@ firmware image.
 
 - Python 3
 - the original supported Shelly TRV 2.2.4 GBL firmware file
+- a computer on the same local network as the Shelly TRV for OTA installation
 - no third-party Python packages are required
 
-The patcher uses only the Python standard library.
+Both `patch_firmware.py` and `ota_server.py` use only the Python standard
+library.
 
-## Usage
+## Quick start
 
-Basic usage:
+The complete workflow is:
+
+1. Obtain the original supported Shelly TRV 2.2.4 GBL firmware.
+2. Verify the original firmware with `patch_firmware.py`.
+3. Create the patched GBL.
+4. Start `ota_server.py` with the patched GBL.
+5. Use the OTA URL printed by the server for the target Shelly TRV.
+6. Keep the OTA server running until the firmware transfer has completed.
+7. Wait for the TRV to reboot.
+8. Verify the installed firmware version and normal device operation.
+
+### 1. Verify the original firmware
+
+```text
+python patch_firmware.py ORIGINAL.gbl --verify
+```
+
+The firmware must pass all validation checks before it can be patched.
+
+### 2. Create the patched firmware
+
+```text
+python patch_firmware.py ORIGINAL.gbl
+```
+
+The default output file is:
+
+```text
+SHTRV-01_2.2.4_patch.gbl
+```
+
+### 3. Start the OTA server
+
+```text
+python ota_server.py SHTRV-01_2.2.4_patch.gbl
+```
+
+The OTA server validates the patched firmware before serving it.
+
+If validation succeeds, the server automatically:
+
+- detects a local IPv4 address,
+- checks whether TCP port 80 is available,
+- falls back to TCP port 8000 if necessary,
+- starts a local HTTP/1.1 server,
+- enables HTTP Range request support,
+- displays firmware-transfer progress,
+- prints the local firmware URL,
+- prints an OTA URL template.
+
+Example firmware URL:
+
+```text
+http://192.168.178.159/SHTRV-01_2.2.4_patch.gbl
+```
+
+The actual IP address and port are detected automatically and may differ.
+
+### 4. Start the OTA update
+
+The server prints an OTA URL in the following form:
+
+```text
+http://<SHELLY-TRV-IP>/ota?url=http://192.168.178.159/SHTRV-01_2.2.4_patch.gbl
+```
+
+Replace:
+
+```text
+<SHELLY-TRV-IP>
+```
+
+with the IP address of the Shelly TRV that should receive the firmware.
+
+For example, if the TRV has the local IP address:
+
+```text
+192.168.178.88
+```
+
+the resulting URL would be:
+
+```text
+http://192.168.178.88/ota?url=http://192.168.178.159/SHTRV-01_2.2.4_patch.gbl
+```
+
+Open the resulting OTA URL while `ota_server.py` is still running.
+
+If port 8000 was selected instead of port 80, the server-generated firmware
+URL will contain `:8000`.
+
+Do not close the OTA server while the firmware is being transferred.
+
+### 5. Verify the device after OTA
+
+A completed HTTP transfer means that the OTA server successfully served the
+firmware data requested by the device.
+
+It does **not** by itself prove that the firmware was successfully installed
+or that the device successfully rebooted.
+
+After the update, wait for the Shelly TRV to become reachable again.
+
+Verify that it reports:
+
+```text
+20240619-130912/v2.2.4@ee290818
+```
+
+Also verify normal operation of:
+
+- Wi-Fi connectivity
+- cloud connectivity, if used
+- temperature measurement
+- thermostat control
+- valve movement
+- device calibration
+
+The firmware modification should be evaluated separately over a longer period
+for stability and battery behavior.
+
+## Patcher usage
+
+### Basic usage
 
 ```text
 python patch_firmware.py ORIGINAL.gbl
@@ -104,8 +236,8 @@ An existing output file will not be overwritten.
 python patch_firmware.py ORIGINAL.gbl --verify
 ```
 
-This validates the supplied firmware without patching or writing a new firmware
-file.
+This validates the supplied firmware without patching or writing a new
+firmware file.
 
 The verification includes the expected file identity, GBL structure, CRC32,
 program layout and patch location.
@@ -204,6 +336,74 @@ python patch_firmware.py --version
 python patch_firmware.py --help
 ```
 
+## OTA server
+
+The included `ota_server.py` provides a small local HTTP server specifically
+for transferring the patched firmware to a Shelly TRV.
+
+It does not patch firmware and it does not automatically initiate an OTA
+update on a device.
+
+Before the server starts, it validates that the supplied file is exactly the
+expected patched firmware.
+
+Validation includes:
+
+- expected file size
+- expected patched SHA-256
+- stored GBL CRC32
+- calculated GBL CRC32
+- expected patched GBL CRC32
+
+If validation fails, the firmware is not served.
+
+### HTTP behavior
+
+The server uses HTTP/1.1 and supports byte-range requests.
+
+Supported request forms include:
+
+```text
+Range: bytes=0-
+Range: bytes=<start>-<end>
+Range: bytes=<start>-
+Range: bytes=-<length>
+```
+
+A valid Range request is answered with HTTP `206 Partial Content`.
+
+A request without a Range header is answered with HTTP `200 OK`.
+
+Invalid or unsupported ranges are rejected.
+
+The successful physical-device OTA tests included a Shelly TRV requesting the
+firmware from this local server.
+
+### Transfer progress
+
+During a firmware request, the server displays transfer information including:
+
+- requesting client
+- requested byte range
+- HTTP response status
+- transferred bytes
+- transfer progress
+- transfer rate
+- completion or interruption status
+
+The transfer status describes the HTTP transfer only.
+
+The OTA server deliberately does not claim that a completed transfer means the
+firmware has been installed successfully.
+
+Device status must be checked separately after the OTA operation.
+
+More detailed OTA-server documentation is maintained in:
+
+```text
+docs/ota-server.md
+```
+
 ## Patch
 
 The modification changes one byte in the main program data.
@@ -242,8 +442,8 @@ The modification forces execution to branch to the existing continuation path,
 bypassing the additional recovery block associated with the observed
 beacon-skip recovery behavior.
 
-Detailed reverse-engineering information is maintained in the separate research
-repository and in `docs/technical-details.md`.
+Detailed reverse-engineering information is maintained in the separate
+research repository and in `docs/technical-details.md`.
 
 ## Reproducibility
 
@@ -304,21 +504,46 @@ Checks include:
 
 The patcher also refuses to overwrite an existing output file.
 
-No automatic flashing is performed.
+`ota_server.py` independently validates the patched firmware before making it
+available over HTTP.
+
+Neither tool automatically initiates flashing on a Shelly TRV.
+
+Firmware modification and OTA installation always involve risk. Do not
+disconnect power or intentionally interrupt the device while an update is in
+progress.
 
 ## Project status
 
-The firmware modification has successfully booted on a test Shelly TRV.
+The firmware modification has successfully booted and operated on multiple
+physical Shelly TRV devices.
 
-Runtime testing has shown normal beacon-skip operation without recurrence of
-the targeted recovery loop during the observed test period.
+Testing performed so far includes:
 
-Normal Wi-Fi and cloud operation have also been observed with the patched
-firmware.
+- generation of the patched 2.2.4 GBL from the known original firmware
+- successful installation of the patched firmware on physical hardware
+- successful boot of patched firmware 2.2.4
+- successful OTA transfer using the included local OTA server
+- an upgrade test from original firmware 2.1.3 to patched firmware 2.2.4
+- normal Wi-Fi operation after installation
+- normal cloud operation after installation
+- successful thermostat calibration
+- successful thermostat valve movement
+- normal RSSI-dependent beacon-skip selection
+- operation without recurrence of the targeted recovery sequence during the
+  observed test periods
+
+The targeted sequence is:
+
+```text
+Beacon skip error! Attempt recovery
+Enter powersave state 1
+Enter powersave state 3 (skip N)
+```
 
 Long-term stability and battery-consumption testing are still in progress.
 
-This does **not yet prove an improvement in battery life**.
+These tests do **not yet prove an improvement in battery life**.
 
 ## Research
 
@@ -333,7 +558,7 @@ https://github.com/AbleMonster/Shelly-TRV-Gen1-2.2.4-beacon-skip-fix
 The research repository contains the investigation and supporting technical
 evidence.
 
-This repository contains the local patching implementation.
+This repository contains the local patching and OTA-serving implementation.
 
 ## Testing
 
@@ -350,7 +575,13 @@ Testing performed during development includes:
 - command-line option conflict handling
 - verification of the expected patched CRC32
 - verification of the expected patched SHA-256
-- installation and boot testing on a physical Shelly TRV
+- installation and boot testing on physical Shelly TRV hardware
+- local HTTP firmware serving
+- HTTP Range request handling
+- firmware-transfer progress reporting
+- OTA installation on a second physical Shelly TRV
+- post-update Wi-Fi and cloud verification
+- post-update thermostat calibration and valve-operation verification
 
 Additional test information is documented in:
 
@@ -372,7 +603,12 @@ firmware being studied.
 Firmware modification and flashing can result in malfunction, loss of
 configuration, device failure, or an unusable device.
 
-Use of this tool and any firmware generated with it is at the user's own risk.
+Use of these tools and any firmware generated with them is at the user's own
+risk.
+
+The OTA server is intended for use on a trusted local network. It does not
+provide authentication or TLS and should not be exposed to the public
+Internet.
 
 This project does not grant any rights to third-party firmware, trademarks,
 or other intellectual property.
