@@ -194,9 +194,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     mode_group.add_argument(
         "--verify",
         action="store_true",
-        help=(
-            "verify the original firmware and exit without patching"
-        ),
+        help="verify the original firmware and exit without patching",
     )
 
     mode_group.add_argument(
@@ -220,9 +218,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--diff",
         action="store_true",
-        help=(
-            "show detailed byte differences produced by the patch"
-        ),
+        help="show detailed byte differences produced by the patch",
     )
 
     parser.add_argument(
@@ -687,36 +683,26 @@ def show_analysis(
     main_block: dict,
     secondary_block: dict,
 ) -> None:
-
-    main_program = main_block[
-        "program_data"
-    ]
-
-    secondary_program = secondary_block[
-        "program_data"
-    ]
-
+    main_program = main_block["program_data"]
+    secondary_program = secondary_block["program_data"]
     end_tag = tags[-1]
 
     stored_crc = struct.unpack_from(
-        "<I",
-        original_gbl,
-        end_tag["payload_start"],
+        "<I", original_gbl, end_tag["payload_start"]
     )[0]
 
-    calculated_crc = zlib.crc32(
-        original_gbl[:-4]
-    ) & 0xFFFFFFFF
+    calculated_crc = zlib.crc32(original_gbl[:-4]) & 0xFFFFFFFF
 
     version, gbl_type = struct.unpack_from(
-        "<II",
-        original_gbl,
-        tags[0]["payload_start"],
+        "<II", original_gbl, tags[0]["payload_start"]
     )
 
     absolute_patch_offset = (
-        main_block["data_start"]
-        + PATCH_BYTE_OFFSET
+        main_block["data_start"] + PATCH_BYTE_OFFSET
+    )
+
+    flash_patch_address = (
+        main_block["flash_address"] + PATCH_BYTE_OFFSET
     )
 
     instruction = main_program[
@@ -724,123 +710,369 @@ def show_analysis(
         PATCH_INSTRUCTION_OFFSET + 2
     ]
 
+    main_flash_end = (
+        main_block["flash_address"]
+        + len(main_program)
+        - 1
+    )
+
+    secondary_flash_end = (
+        secondary_block["flash_address"]
+        + len(secondary_program)
+        - 1
+    )
+
+    context_start = max(
+        0,
+        PATCH_INSTRUCTION_OFFSET - 16,
+    )
+
+    context_end = min(
+        len(main_program),
+        PATCH_INSTRUCTION_OFFSET + 2 + 16,
+    )
+
+    total_program = (
+        len(main_program)
+        + len(secondary_program)
+    )
+
     print()
     print(separator())
     print("FIRMWARE ANALYSIS")
     print(separator())
 
     print()
-    print("File")
+    print("Mode                : READ-ONLY")
+    print("Writes performed    : NO")
+    print("Firmware modified   : NO")
+
+    # -------------------------------------------------------------------------
+    # Identity
+    # -------------------------------------------------------------------------
+
+    print()
+    print("Identity")
     print(separator("-"))
+
+    print(f"Device              : {SUPPORTED_DEVICE}")
+    print(f"Firmware            : {SUPPORTED_VERSION}")
+    print(f"Build               : {SUPPORTED_BUILD}")
     print(f"Path                : {input_path}")
     print(f"Size                : {len(original_gbl):,} bytes")
     print(f"SHA-256             : {sha256_bytes(original_gbl)}")
     print("Supported           : YES")
 
+    # -------------------------------------------------------------------------
+    # GBL container
+    # -------------------------------------------------------------------------
+
     print()
-    print("GBL")
+    print("GBL container")
     print(separator("-"))
+
     print(f"Version             : 0x{version:08X}")
-    print(f"Type                : 0x{gbl_type:08X}")
+    print(f"Type / flags        : 0x{gbl_type:08X}")
     print(f"Tags                : {len(tags)}")
     print(f"Stored CRC32        : 0x{stored_crc:08X}")
     print(f"Calculated CRC32    : 0x{calculated_crc:08X}")
     print("CRC valid           : YES")
 
+    print(
+        f"CRC covered range   : "
+        f"0x00000000 - "
+        f"0x{len(original_gbl) - 5:08X}"
+    )
+
+    print(
+        f"Stored CRC range    : "
+        f"0x{len(original_gbl) - 4:08X} - "
+        f"0x{len(original_gbl) - 1:08X}"
+    )
+
+    # -------------------------------------------------------------------------
+    # GBL tag map
+    # -------------------------------------------------------------------------
+
     print()
-    print("Tag map")
+    print("GBL tag map")
     print(separator("-"))
 
     for tag in tags:
         print(
             f"#{tag['number']:<2} "
             f"{tag_name(tag['tag_id']):<18} "
-            f"ID 0x{tag['tag_id']:08X}  "
-            f"offset 0x{tag['offset']:08X}  "
-            f"length {tag['length']:,}"
+            f"ID 0x{tag['tag_id']:08X}"
         )
 
+        print(
+            f"    Tag range        : "
+            f"0x{tag['offset']:08X} - "
+            f"0x{tag['payload_end'] - 1:08X}"
+        )
+
+        print(
+            f"    Payload range    : "
+            f"0x{tag['payload_start']:08X} - "
+            f"0x{tag['payload_end'] - 1:08X}"
+        )
+
+        print(
+            f"    Payload length   : "
+            f"{tag['length']:,} bytes"
+        )
+
+    # -------------------------------------------------------------------------
+    # PROGRAM layout
+    # -------------------------------------------------------------------------
+
     print()
-    print("PROGRAM #1")
+    print("PROGRAM layout")
     print(separator("-"))
+
+    print("PROGRAM #1")
+
     print(
-        f"Flash address       : "
+        f"  Flash start       : "
         f"0x{main_block['flash_address']:08X}"
     )
+
     print(
-        f"GBL data offset     : "
-        f"0x{main_block['data_start']:08X}"
+        f"  Flash end         : "
+        f"0x{main_flash_end:08X}"
     )
+
     print(
-        f"Size                : "
+        f"  GBL data range    : "
+        f"0x{main_block['data_start']:08X} - "
+        f"0x{main_block['data_end'] - 1:08X}"
+    )
+
+    print(
+        f"  Size              : "
         f"{len(main_program):,} bytes"
     )
+
     print(
-        f"SHA-256             : "
+        f"  File share        : "
+        f"{len(main_program) / len(original_gbl) * 100:.2f}%"
+    )
+
+    print(
+        f"  SHA-256           : "
         f"{sha256_bytes(main_program)}"
     )
 
     print()
     print("PROGRAM #2")
-    print(separator("-"))
+
     print(
-        f"Flash address       : "
+        f"  Flash start       : "
         f"0x{secondary_block['flash_address']:08X}"
     )
+
     print(
-        f"GBL data offset     : "
-        f"0x{secondary_block['data_start']:08X}"
+        f"  Flash end         : "
+        f"0x{secondary_flash_end:08X}"
     )
+
     print(
-        f"Size                : "
+        f"  GBL data range    : "
+        f"0x{secondary_block['data_start']:08X} - "
+        f"0x{secondary_block['data_end'] - 1:08X}"
+    )
+
+    print(
+        f"  Size              : "
         f"{len(secondary_program):,} bytes"
     )
+
     print(
-        f"SHA-256             : "
+        f"  File share        : "
+        f"{len(secondary_program) / len(original_gbl) * 100:.2f}%"
+    )
+
+    print(
+        f"  SHA-256           : "
         f"{sha256_bytes(secondary_program)}"
     )
 
     print()
-    print("Patch target")
+
+    print(
+        f"PROGRAM data total  : "
+        f"{total_program:,} bytes "
+        f"({total_program / len(original_gbl) * 100:.2f}% of GBL)"
+    )
+
+    # -------------------------------------------------------------------------
+    # Patch address mapping
+    # -------------------------------------------------------------------------
+
+    print()
+    print("Patch address mapping")
     print(separator("-"))
-    print(
-        f"Program offset      : "
-        f"0x{PATCH_BYTE_OFFSET:08X}"
-    )
-    print(
-        f"GBL offset          : "
-        f"0x{absolute_patch_offset:08X}"
-    )
+
     print(
         f"Instruction offset  : "
-        f"0x{PATCH_INSTRUCTION_OFFSET:08X}"
+        f"0x{PATCH_INSTRUCTION_OFFSET:08X} "
+        f"(PROGRAM #1)"
     )
+
     print(
-        f"Current instruction : "
+        f"Patch byte offset   : "
+        f"0x{PATCH_BYTE_OFFSET:08X} "
+        f"(PROGRAM #1)"
+    )
+
+    print(
+        f"Flash address       : "
+        f"0x{flash_patch_address:08X}"
+    )
+
+    print(
+        f"GBL file offset     : "
+        f"0x{absolute_patch_offset:08X}"
+    )
+
+    print(
+        f"Mapping             : "
+        f"PROGRAM 0x{PATCH_BYTE_OFFSET:08X} "
+        f"-> flash 0x{flash_patch_address:08X} "
+        f"-> GBL 0x{absolute_patch_offset:08X}"
+    )
+
+    # -------------------------------------------------------------------------
+    # Patch instruction
+    # -------------------------------------------------------------------------
+
+    print()
+    print("Patch instruction")
+    print(separator("-"))
+
+    print(
+        f"Original instruction: "
         f"{format_bytes(instruction)}"
     )
+
     print(
         f"Patched instruction : "
         f"{format_bytes(EXPECTED_PATCHED_INSTRUCTION)}"
     )
+
     print(
         f"Byte change         : "
         f"{EXPECTED_ORIGINAL_BYTE:02X} -> "
         f"{EXPECTED_PATCHED_BYTE:02X}"
     )
+
     print("Patch applicable    : YES")
+
+    # -------------------------------------------------------------------------
+    # Hex context
+    # -------------------------------------------------------------------------
+
+    print()
+    print("Hex context around patch")
+    print(separator("-"))
+
+    print(
+        f"PROGRAM range       : "
+        f"0x{context_start:08X} - "
+        f"0x{context_end - 1:08X}"
+    )
+
+    for row_start in range(
+        context_start,
+        context_end,
+        16,
+    ):
+        row_end = min(
+            row_start + 16,
+            context_end,
+        )
+
+        fields = []
+
+        for offset in range(
+            row_start,
+            row_end,
+        ):
+            value = main_program[offset]
+
+            if offset == PATCH_BYTE_OFFSET:
+                fields.append(
+                    f"[{value:02X}]"
+                )
+            else:
+                fields.append(
+                    f" {value:02X} "
+                )
+
+        print(
+            f"0x{row_start:08X}: "
+            + " ".join(fields)
+        )
+
+    print()
+
+    print(
+        f"Marked byte         : "
+        f"[{EXPECTED_ORIGINAL_BYTE:02X}] at "
+        f"PROGRAM 0x{PATCH_BYTE_OFFSET:08X}"
+    )
+
+    # -------------------------------------------------------------------------
+    # Expected effects
+    # -------------------------------------------------------------------------
+
+    print()
+    print("Expected patch effects")
+    print(separator("-"))
+
+    print("PROGRAM data bytes  : 1 changed")
+    print("GBL content bytes   : 1 changed")
+    print("Stored CRC bytes    : 4 changed")
+    print("Total GBL bytes     : 5 changed")
+
+    print(
+        f"PROGRAM byte        : "
+        f"0x{PATCH_BYTE_OFFSET:08X} "
+        f"{EXPECTED_ORIGINAL_BYTE:02X} -> "
+        f"{EXPECTED_PATCHED_BYTE:02X}"
+    )
+
+    print(
+        f"GBL patch byte      : "
+        f"0x{absolute_patch_offset:08X} "
+        f"{EXPECTED_ORIGINAL_BYTE:02X} -> "
+        f"{EXPECTED_PATCHED_BYTE:02X}"
+    )
+
+    print(
+        f"CRC32               : "
+        f"0x{EXPECTED_ORIGINAL_GBL_CRC32:08X} -> "
+        f"0x{EXPECTED_PATCHED_GBL_CRC32:08X}"
+    )
+
+    # -------------------------------------------------------------------------
+    # Expected patched result
+    # -------------------------------------------------------------------------
 
     print()
     print("Expected patched result")
     print(separator("-"))
+
     print(
         f"PROGRAM SHA-256     : "
         f"{EXPECTED_PATCHED_PROGRAM_SHA256}"
     )
+
     print(
         f"GBL CRC32           : "
         f"0x{EXPECTED_PATCHED_GBL_CRC32:08X}"
     )
+
     print(
         f"GBL SHA-256         : "
         f"{EXPECTED_PATCHED_GBL_SHA256}"
@@ -1189,6 +1421,7 @@ def show_diff(
         )
 
     print()
+
     print(
         f"Changed PROGRAM bytes : "
         f"{len(program_differences)}"
@@ -1375,25 +1608,25 @@ def run_patch(
     )
 
     print(
-        f"Patch                : "
+        f"Patch               : "
         f"0x{PATCH_BYTE_OFFSET:08X} "
         f"{EXPECTED_ORIGINAL_BYTE:02X} -> "
         f"{EXPECTED_PATCHED_BYTE:02X}"
     )
 
     print(
-        f"Instruction          : "
+        f"Instruction         : "
         f"{format_bytes(EXPECTED_ORIGINAL_INSTRUCTION)} -> "
         f"{format_bytes(EXPECTED_PATCHED_INSTRUCTION)}"
     )
 
     print(
-        f"Patched PROGRAM SHA  : "
+        f"Patched PROGRAM SHA : "
         f"{sha256_bytes(patched_program)}"
     )
 
     print()
-    print("PROGRAM patch        : OK")
+    print("PROGRAM patch       : OK")
 
     print()
     print(separator())
@@ -1408,17 +1641,17 @@ def run_patch(
     )
 
     print(
-        f"New CRC32            : "
+        f"New CRC32           : "
         f"0x{EXPECTED_PATCHED_GBL_CRC32:08X}"
     )
 
     print(
-        f"Rebuilt size         : "
+        f"Rebuilt size        : "
         f"{len(patched_gbl):,} bytes"
     )
 
     print()
-    print("GBL rebuild          : OK")
+    print("GBL rebuild         : OK")
 
     final_sha, differences = validate_patched_gbl(
         original_gbl,
@@ -1439,24 +1672,24 @@ def run_patch(
     print(separator())
     print()
 
-    print("Original GBL         : VERIFIED")
-    print("Original CRC32       : VERIFIED")
-    print("Original PROGRAM     : VERIFIED")
-    print("Patch location       : VERIFIED")
-    print("Patched PROGRAM      : VERIFIED")
-    print("Secondary PROGRAM    : UNCHANGED")
-    print("Rebuilt GBL          : VERIFIED")
-    print("Final CRC32          : VERIFIED")
-    print("Final SHA-256        : VERIFIED")
+    print("Original GBL        : VERIFIED")
+    print("Original CRC32      : VERIFIED")
+    print("Original PROGRAM    : VERIFIED")
+    print("Patch location      : VERIFIED")
+    print("Patched PROGRAM     : VERIFIED")
+    print("Secondary PROGRAM   : UNCHANGED")
+    print("Rebuilt GBL         : VERIFIED")
+    print("Final CRC32         : VERIFIED")
+    print("Final SHA-256       : VERIFIED")
+
     print(
         f"Changed GBL bytes   : "
         f"{len(differences)}"
     )
 
     print()
-    print(
-        f"Final SHA-256:"
-    )
+    print("Final SHA-256:")
+
     print(
         f"  {final_sha}"
     )
@@ -1493,11 +1726,11 @@ def run_patch(
     print("PATCHING COMPLETED SUCCESSFULLY")
     print(separator())
     print()
-    print(f"Device               : {SUPPORTED_DEVICE}")
-    print(f"Firmware             : {SUPPORTED_VERSION}")
-    print(f"Build                : {SUPPORTED_BUILD}")
+    print(f"Device              : {SUPPORTED_DEVICE}")
+    print(f"Firmware            : {SUPPORTED_VERSION}")
+    print(f"Build               : {SUPPORTED_BUILD}")
     print()
-    print(f"Patched firmware     : {output_path}")
+    print(f"Patched firmware    : {output_path}")
     print()
     print("The tool does not flash the device automatically.")
     print()
