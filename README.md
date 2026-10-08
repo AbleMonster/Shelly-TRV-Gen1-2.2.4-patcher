@@ -94,7 +94,7 @@ separately in the research repository:
 
 **Shelly-TRV-Gen1-2.2.4-beacon-skip-fix**
 
-A direct link will be added when this repository is published.
+https://github.com/AbleMonster/Shelly-TRV-Gen1-2.2.4-beacon-skip-fix
 
 ## Disclaimer
 
