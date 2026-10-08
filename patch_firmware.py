@@ -10,40 +10,70 @@ from pathlib import Path
 # =============================================================================
 # Shelly TRV 2.2.4 Beacon-Skip Firmware Patcher
 #
-# Current implementation:
-#   1. Validate input file
-#   2. Validate exact supported firmware by size and SHA-256
-#   3. Parse and validate the GBL container
-#   4. Validate GBL header/version/type
-#   5. Validate expected GBL tag structure
-#   6. Validate GBL CRC32
-#   7. Locate the main PROGRAM tag
-#   8. Validate its flash address
-#   9. Extract and validate the program data
-#  10. Validate the expected ARM/Thumb instruction at the patch location
+# Supported firmware:
+#   Device : Shelly TRV (SHTRV-01)
+#   Version: 2.2.4
+#   Build  : 20240619-130912/v2.2.4@ee290818
 #
-# IMPORTANT:
-# No firmware modification is performed yet.
+# Patch:
+#   Program offset 0x0001E1C9
+#   DC -> E0
+#
+# Original ARM/Thumb instruction:
+#   31 DC    bgt 0x0001E22E
+#
+# Patched ARM/Thumb instruction:
+#   31 E0    b   0x0001E22E
+#
+# The script:
+#   1. validates the exact supported original GBL,
+#   2. validates the GBL structure and CRC32,
+#   3. validates the main PROGRAM block,
+#   4. applies the one-byte patch in memory,
+#   5. validates the patched PROGRAM block,
+#   6. rebuilds the GBL in memory,
+#   7. recalculates the GBL CRC32,
+#   8. validates the complete patched GBL,
+#   9. writes the final GBL only after all checks pass.
+#
+# No firmware is downloaded or uploaded by this tool.
 # =============================================================================
 
 
 # -----------------------------------------------------------------------------
-# Supported firmware
+# Supported original firmware
 # -----------------------------------------------------------------------------
 
 SUPPORTED_DEVICE = "Shelly TRV (SHTRV-01)"
 SUPPORTED_VERSION = "2.2.4"
 SUPPORTED_BUILD = "20240619-130912/v2.2.4@ee290818"
 
-EXPECTED_SIZE = 1_106_384
+EXPECTED_ORIGINAL_GBL_SIZE = 1_106_384
 
-EXPECTED_SHA256 = (
+EXPECTED_ORIGINAL_GBL_SHA256 = (
     "5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f"
 )
 
+EXPECTED_ORIGINAL_GBL_CRC32 = 0xDC7BAB58
+
 
 # -----------------------------------------------------------------------------
-# GBL format constants
+# Expected patched GBL
+# -----------------------------------------------------------------------------
+
+EXPECTED_PATCHED_GBL_SIZE = 1_106_384
+
+EXPECTED_PATCHED_GBL_SHA256 = (
+    "ac7d85c8e9239bebd3b134c4b93fc838859c613e59f7690650097da984ea7222"
+)
+
+EXPECTED_PATCHED_GBL_CRC32 = 0x432F734F
+
+OUTPUT_FILENAME = "SHTRV-01_2.2.4_patch.gbl"
+
+
+# -----------------------------------------------------------------------------
+# GBL format
 # -----------------------------------------------------------------------------
 
 GBL_HEADER_TAG = 0x03A617EB
@@ -54,7 +84,6 @@ GBL_END_TAG = 0xFC0404FC
 
 EXPECTED_GBL_VERSION = 0x03000000
 EXPECTED_GBL_TYPE = 0x00000000
-
 
 EXPECTED_TAGS = [
     (GBL_HEADER_TAG, 8),
@@ -67,42 +96,37 @@ EXPECTED_TAGS = [
 
 
 # -----------------------------------------------------------------------------
-# Main firmware PROGRAM block
+# Main PROGRAM block
 # -----------------------------------------------------------------------------
 
-EXPECTED_PROGRAM_FLASH_ADDRESS = 0x00000000
+EXPECTED_MAIN_FLASH_ADDRESS = 0x00000000
+EXPECTED_MAIN_PROGRAM_SIZE = 1_049_548
 
-EXPECTED_PROGRAM_SIZE = 1_049_548
-
-EXPECTED_PROGRAM_SHA256 = (
+EXPECTED_ORIGINAL_PROGRAM_SHA256 = (
     "4dc770fe535008ef150f3a144354169199e1a0e235173abcc3f7387b95ee9b5c"
+)
+
+EXPECTED_PATCHED_PROGRAM_SHA256 = (
+    "d69fc6157e50b3d72b4c800c0008e7f1d7e7e4d9799cee2b0f4b2269b68fc7d4"
 )
 
 
 # -----------------------------------------------------------------------------
-# Beacon-skip patch location
-#
-# Original ARM/Thumb instruction:
-#
-#   0x0001E1C8: 31 DC    bgt 0x0001E22E
-#
-# Future patched instruction:
-#
-#   0x0001E1C8: 31 E0    b   0x0001E22E
-#
-# Only the second byte changes:
-#
-#   Program offset 0x0001E1C9
-#   DC -> E0
-#
+# Secondary PROGRAM block
+# -----------------------------------------------------------------------------
+
+EXPECTED_SECONDARY_FLASH_ADDRESS = 0x00130A98
+EXPECTED_SECONDARY_PROGRAM_SIZE = 30_872
+
+
+# -----------------------------------------------------------------------------
+# Patch
 # -----------------------------------------------------------------------------
 
 PATCH_INSTRUCTION_OFFSET = 0x0001E1C8
-
 PATCH_BYTE_OFFSET = 0x0001E1C9
 
 EXPECTED_ORIGINAL_INSTRUCTION = bytes.fromhex("31 DC")
-
 EXPECTED_PATCHED_INSTRUCTION = bytes.fromhex("31 E0")
 
 EXPECTED_ORIGINAL_BYTE = 0xDC
@@ -114,38 +138,24 @@ EXPECTED_PATCHED_BYTE = 0xE0
 # -----------------------------------------------------------------------------
 
 def fail(message: str) -> None:
-    """
-    Abort safely.
-
-    No output firmware is created by the current implementation.
-    """
-
     print()
-    print("=" * 60)
+    print("=" * 68)
     print("ERROR")
-    print("=" * 60)
+    print("=" * 68)
     print()
     print(message)
     print()
-    print("No patched firmware was created.")
+    print("No new patched firmware file was written.")
     print()
 
     raise SystemExit(1)
 
 
 def sha256_bytes(data: bytes) -> str:
-    """
-    Calculate SHA-256 of bytes held in memory.
-    """
-
     return hashlib.sha256(data).hexdigest()
 
 
 def sha256_file(path: Path) -> str:
-    """
-    Calculate SHA-256 of a file.
-    """
-
     sha256 = hashlib.sha256()
 
     with path.open("rb") as file:
@@ -160,46 +170,28 @@ def sha256_file(path: Path) -> str:
     return sha256.hexdigest()
 
 
+def format_bytes(data: bytes) -> str:
+    return data.hex(" ").upper()
+
+
 # -----------------------------------------------------------------------------
-# GBL parser / validator
+# Generic GBL parser
 # -----------------------------------------------------------------------------
 
-def validate_gbl(path: Path) -> tuple[bytes, list[dict]]:
-    """
-    Parse and validate the complete GBL container.
-    """
-
-    print()
-    print("=" * 60)
-    print("GBL container validation")
-    print("=" * 60)
-    print()
-
-    try:
-        data = path.read_bytes()
-    except OSError as exc:
-        fail(
-            "Could not read firmware file.\n\n"
-            f"{exc}"
-        )
-
+def parse_gbl(data: bytes) -> list[dict]:
     tags: list[dict] = []
 
     offset = 0
-    tag_number = 0
-
-    # -------------------------------------------------------------------------
-    # Parse all GBL tags
-    # -------------------------------------------------------------------------
+    number = 0
 
     while offset < len(data):
-        tag_number += 1
+        number += 1
 
         if offset + 8 > len(data):
             fail(
                 "Truncated GBL tag header.\n\n"
-                f"Tag number : {tag_number}\n"
-                f"Offset     : 0x{offset:08X}"
+                f"Tag number: {number}\n"
+                f"Offset    : 0x{offset:08X}"
             )
 
         tag_id, length = struct.unpack_from(
@@ -214,17 +206,15 @@ def validate_gbl(path: Path) -> tuple[bytes, list[dict]]:
         if payload_end > len(data):
             fail(
                 "GBL tag extends beyond the end of the file.\n\n"
-                f"Tag number    : {tag_number}\n"
-                f"Tag ID        : 0x{tag_id:08X}\n"
-                f"Tag offset    : 0x{offset:08X}\n"
-                f"Payload length: {length:,}\n"
-                f"Payload end   : 0x{payload_end:08X}\n"
-                f"File size     : 0x{len(data):08X}"
+                f"Tag number : {number}\n"
+                f"Tag ID     : 0x{tag_id:08X}\n"
+                f"Tag offset : 0x{offset:08X}\n"
+                f"Length     : {length:,}"
             )
 
         tags.append(
             {
-                "number": tag_number,
+                "number": number,
                 "offset": offset,
                 "tag_id": tag_id,
                 "length": length,
@@ -235,34 +225,41 @@ def validate_gbl(path: Path) -> tuple[bytes, list[dict]]:
 
         offset = payload_end
 
-    # -------------------------------------------------------------------------
-    # Parser must end exactly at EOF
-    # -------------------------------------------------------------------------
-
     if offset != len(data):
         fail(
-            "GBL parser did not terminate exactly at the end of the file.\n\n"
-            f"Parser offset: 0x{offset:08X}\n"
-            f"File size    : 0x{len(data):08X}"
+            "GBL parser did not terminate exactly at the end of the file."
         )
+
+    return tags
+
+
+# -----------------------------------------------------------------------------
+# GBL structure validation
+# -----------------------------------------------------------------------------
+
+def validate_gbl_structure(
+    data: bytes,
+    *,
+    label: str,
+) -> list[dict]:
+
+    print()
+    print("=" * 68)
+    print(f"{label} - GBL container validation")
+    print("=" * 68)
+    print()
+
+    tags = parse_gbl(data)
 
     print(f"Tags found   : {len(tags)}")
     print()
 
-    # -------------------------------------------------------------------------
-    # Validate number of tags
-    # -------------------------------------------------------------------------
-
     if len(tags) != len(EXPECTED_TAGS):
         fail(
-            "Unexpected number of GBL tags.\n\n"
+            f"{label}: unexpected number of GBL tags.\n\n"
             f"Expected: {len(EXPECTED_TAGS)}\n"
             f"Found   : {len(tags)}"
         )
-
-    # -------------------------------------------------------------------------
-    # Validate tag IDs and lengths
-    # -------------------------------------------------------------------------
 
     for index, (tag, expected) in enumerate(
         zip(tags, EXPECTED_TAGS),
@@ -279,98 +276,68 @@ def validate_gbl(path: Path) -> tuple[bytes, list[dict]]:
 
         if tag["tag_id"] != expected_id:
             fail(
-                f"Unexpected GBL tag #{index}.\n\n"
+                f"{label}: unexpected tag #{index}.\n\n"
                 f"Expected ID: 0x{expected_id:08X}\n"
                 f"Found ID   : 0x{tag['tag_id']:08X}"
             )
 
         if tag["length"] != expected_length:
             fail(
-                f"Unexpected length for GBL tag #{index}.\n\n"
+                f"{label}: unexpected length for tag #{index}.\n\n"
                 f"Expected: {expected_length:,}\n"
                 f"Found   : {tag['length']:,}"
             )
 
-    # -------------------------------------------------------------------------
-    # Validate GBL header
-    # -------------------------------------------------------------------------
-
-    print()
-    print("-" * 60)
-    print("GBL header")
-    print("-" * 60)
-    print()
+    # Header
 
     header = tags[0]
 
     if header["tag_id"] != GBL_HEADER_TAG:
         fail(
-            "The first GBL tag is not the expected GBL header."
+            f"{label}: first tag is not the expected GBL header."
         )
 
     if header["length"] != 8:
         fail(
-            "Unexpected GBL header payload length.\n\n"
-            f"Expected: 8\n"
-            f"Found   : {header['length']}"
+            f"{label}: unexpected GBL header length."
         )
 
-    header_payload = data[
-        header["payload_start"]:
-        header["payload_end"]
-    ]
-
-    if len(header_payload) != 8:
-        fail(
-            "GBL header payload could not be read completely."
-        )
-
-    version, gbl_type = struct.unpack(
+    version, gbl_type = struct.unpack_from(
         "<II",
-        header_payload,
+        data,
+        header["payload_start"],
     )
 
+    print()
     print(f"GBL version  : 0x{version:08X}")
     print(f"GBL type     : 0x{gbl_type:08X}")
 
     if version != EXPECTED_GBL_VERSION:
         fail(
-            "Unexpected GBL version.\n\n"
+            f"{label}: unexpected GBL version.\n\n"
             f"Expected: 0x{EXPECTED_GBL_VERSION:08X}\n"
             f"Found   : 0x{version:08X}"
         )
 
     if gbl_type != EXPECTED_GBL_TYPE:
         fail(
-            "Unexpected GBL type or flags.\n\n"
+            f"{label}: unexpected GBL type/flags.\n\n"
             f"Expected: 0x{EXPECTED_GBL_TYPE:08X}\n"
-            f"Found   : 0x{gbl_type:08X}\n\n"
-            "The supplied firmware may use a different GBL "
-            "configuration and will not be processed."
+            f"Found   : 0x{gbl_type:08X}"
         )
 
-    # -------------------------------------------------------------------------
-    # Validate end tag and CRC32
-    # -------------------------------------------------------------------------
-
-    print()
-    print("-" * 60)
-    print("GBL end tag / CRC32")
-    print("-" * 60)
-    print()
+    # End tag / CRC
 
     end_tag = tags[-1]
 
     if end_tag["tag_id"] != GBL_END_TAG:
         fail(
-            "The final GBL tag is not the expected end tag."
+            f"{label}: final tag is not the expected end tag."
         )
 
     if end_tag["length"] != 4:
         fail(
-            "Unexpected GBL end-tag payload length.\n\n"
-            f"Expected: 4\n"
-            f"Found   : {end_tag['length']}"
+            f"{label}: end tag does not contain a 4-byte CRC32."
         )
 
     stored_crc = struct.unpack_from(
@@ -383,12 +350,13 @@ def validate_gbl(path: Path) -> tuple[bytes, list[dict]]:
         data[:-4]
     ) & 0xFFFFFFFF
 
+    print()
     print(f"Stored CRC32 : 0x{stored_crc:08X}")
     print(f"Calc. CRC32  : 0x{calculated_crc:08X}")
 
     if stored_crc != calculated_crc:
         fail(
-            "GBL CRC32 validation failed.\n\n"
+            f"{label}: CRC32 validation failed.\n\n"
             f"Stored     : 0x{stored_crc:08X}\n"
             f"Calculated : 0x{calculated_crc:08X}"
         )
@@ -398,298 +366,864 @@ def validate_gbl(path: Path) -> tuple[bytes, list[dict]]:
     print("GBL header    : OK")
     print("GBL CRC32     : OK")
 
-    return data, tags
+    return tags
 
 
 # -----------------------------------------------------------------------------
-# Main PROGRAM block validation
+# PROGRAM block helpers
 # -----------------------------------------------------------------------------
 
-def validate_main_program(
-    gbl_data: bytes,
+def get_program_blocks(
+    data: bytes,
     tags: list[dict],
-) -> bytes:
-    """
-    Locate, extract and validate the main firmware PROGRAM block.
+) -> list[dict]:
 
-    The PROGRAM tag payload consists of:
+    blocks: list[dict] = []
 
-        4 bytes  - flash address
-        remaining bytes - program data
+    for tag in tags:
+        if tag["tag_id"] != GBL_PROGRAM_TAG:
+            continue
 
-    For the supported firmware the main block must target flash address
-    0x00000000.
-    """
-
-    print()
-    print("=" * 60)
-    print("Main firmware PROGRAM block")
-    print("=" * 60)
-    print()
-
-    program_tags = [
-        tag
-        for tag in tags
-        if tag["tag_id"] == GBL_PROGRAM_TAG
-    ]
-
-    print(f"PROGRAM tags : {len(program_tags)}")
-
-    if len(program_tags) != 2:
-        fail(
-            "Unexpected number of PROGRAM tags.\n\n"
-            f"Expected: 2\n"
-            f"Found   : {len(program_tags)}"
-        )
-
-    main_program_tag = None
-
-    # -------------------------------------------------------------------------
-    # Inspect PROGRAM tags and locate flash address 0x00000000
-    # -------------------------------------------------------------------------
-
-    for index, tag in enumerate(
-        program_tags,
-        start=1,
-    ):
         if tag["length"] < 4:
             fail(
-                f"PROGRAM tag #{index} is too short to contain "
-                "a flash address."
+                "PROGRAM tag is too short to contain a flash address."
             )
 
         flash_address = struct.unpack_from(
             "<I",
-            gbl_data,
+            data,
             tag["payload_start"],
         )[0]
 
-        program_size = tag["length"] - 4
+        data_start = tag["payload_start"] + 4
+        data_end = tag["payload_end"]
 
-        print(
-            f"PROGRAM #{index}   : "
-            f"flash 0x{flash_address:08X}, "
-            f"data {program_size:,} bytes"
+        program_data = data[
+            data_start:
+            data_end
+        ]
+
+        blocks.append(
+            {
+                "tag": tag,
+                "flash_address": flash_address,
+                "data_start": data_start,
+                "data_end": data_end,
+                "program_data": program_data,
+            }
         )
 
-        if flash_address == EXPECTED_PROGRAM_FLASH_ADDRESS:
-            if main_program_tag is not None:
-                fail(
-                    "More than one PROGRAM tag targets "
-                    "flash address 0x00000000."
-                )
+    return blocks
 
-            main_program_tag = tag
 
-    if main_program_tag is None:
-        fail(
-            "Could not locate the main PROGRAM tag targeting "
-            "flash address 0x00000000."
-        )
+def find_program_block(
+    blocks: list[dict],
+    flash_address: int,
+) -> dict:
 
-    # -------------------------------------------------------------------------
-    # Read and validate flash address again
-    # -------------------------------------------------------------------------
-
-    flash_address = struct.unpack_from(
-        "<I",
-        gbl_data,
-        main_program_tag["payload_start"],
-    )[0]
-
-    if flash_address != EXPECTED_PROGRAM_FLASH_ADDRESS:
-        fail(
-            "Unexpected main PROGRAM flash address.\n\n"
-            f"Expected: 0x{EXPECTED_PROGRAM_FLASH_ADDRESS:08X}\n"
-            f"Found   : 0x{flash_address:08X}"
-        )
-
-    # -------------------------------------------------------------------------
-    # Extract actual program data
-    #
-    # PROGRAM payload:
-    #
-    #   +0x00  flash address (4 bytes)
-    #   +0x04  firmware program data
-    #
-    # -------------------------------------------------------------------------
-
-    program_data_start = (
-        main_program_tag["payload_start"] + 4
-    )
-
-    program_data_end = (
-        main_program_tag["payload_end"]
-    )
-
-    program_data = gbl_data[
-        program_data_start:
-        program_data_end
+    matches = [
+        block
+        for block in blocks
+        if block["flash_address"] == flash_address
     ]
+
+    if len(matches) != 1:
+        fail(
+            "Could not uniquely identify PROGRAM block.\n\n"
+            f"Flash address: 0x{flash_address:08X}\n"
+            f"Matches      : {len(matches)}"
+        )
+
+    return matches[0]
+
+
+# -----------------------------------------------------------------------------
+# Validate original PROGRAM blocks
+# -----------------------------------------------------------------------------
+
+def validate_original_programs(
+    data: bytes,
+    tags: list[dict],
+) -> tuple[bytes, bytes, dict]:
 
     print()
-    print(f"Flash address: 0x{flash_address:08X}")
-    print(f"Program size : {len(program_data):,} bytes")
+    print("=" * 68)
+    print("Original PROGRAM block validation")
+    print("=" * 68)
+    print()
 
-    # -------------------------------------------------------------------------
-    # Validate program size
-    # -------------------------------------------------------------------------
-
-    if len(program_data) != EXPECTED_PROGRAM_SIZE:
-        fail(
-            "Unexpected main program size.\n\n"
-            f"Expected: {EXPECTED_PROGRAM_SIZE:,} bytes\n"
-            f"Found   : {len(program_data):,} bytes"
-        )
-
-    print("Program size : OK")
-
-    # -------------------------------------------------------------------------
-    # Validate program SHA-256
-    # -------------------------------------------------------------------------
-
-    print("Program SHA  : calculating...")
-
-    program_sha256 = sha256_bytes(
-        program_data
+    blocks = get_program_blocks(
+        data,
+        tags,
     )
 
-    print(f"Program SHA  : {program_sha256}")
+    print(f"PROGRAM tags : {len(blocks)}")
 
-    if program_sha256.lower() != EXPECTED_PROGRAM_SHA256.lower():
+    if len(blocks) != 2:
         fail(
-            "Main program SHA-256 validation failed.\n\n"
-            f"Expected:\n"
-            f"{EXPECTED_PROGRAM_SHA256}\n\n"
-            f"Found:\n"
-            f"{program_sha256}"
+            "Unexpected number of PROGRAM blocks.\n\n"
+            f"Expected: 2\n"
+            f"Found   : {len(blocks)}"
         )
 
-    print("Program SHA  : OK")
-
-    # -------------------------------------------------------------------------
-    # Validate patch offsets are inside the program
-    # -------------------------------------------------------------------------
-
-    if (
-        PATCH_INSTRUCTION_OFFSET + len(EXPECTED_ORIGINAL_INSTRUCTION)
-        > len(program_data)
+    for index, block in enumerate(
+        blocks,
+        start=1,
     ):
-        fail(
-            "Patch instruction offset is outside the main program data."
+        print(
+            f"PROGRAM #{index}   : "
+            f"flash 0x{block['flash_address']:08X}, "
+            f"data {len(block['program_data']):,} bytes"
         )
 
-    if PATCH_BYTE_OFFSET >= len(program_data):
-        fail(
-            "Patch byte offset is outside the main program data."
-        )
+    main_block = find_program_block(
+        blocks,
+        EXPECTED_MAIN_FLASH_ADDRESS,
+    )
 
-    # -------------------------------------------------------------------------
-    # Read original instruction
-    # -------------------------------------------------------------------------
+    secondary_block = find_program_block(
+        blocks,
+        EXPECTED_SECONDARY_FLASH_ADDRESS,
+    )
 
-    original_instruction = program_data[
-        PATCH_INSTRUCTION_OFFSET:
-        PATCH_INSTRUCTION_OFFSET + len(EXPECTED_ORIGINAL_INSTRUCTION)
+    original_program = main_block[
+        "program_data"
     ]
 
-    original_patch_byte = program_data[
+    secondary_program = secondary_block[
+        "program_data"
+    ]
+
+    # Main block
+
+    print()
+    print("-" * 68)
+    print("Main PROGRAM")
+    print("-" * 68)
+    print()
+
+    print(
+        f"Flash address : "
+        f"0x{main_block['flash_address']:08X}"
+    )
+
+    print(
+        f"Program size  : "
+        f"{len(original_program):,} bytes"
+    )
+
+    if len(original_program) != EXPECTED_MAIN_PROGRAM_SIZE:
+        fail(
+            "Unexpected main PROGRAM size.\n\n"
+            f"Expected: {EXPECTED_MAIN_PROGRAM_SIZE:,}\n"
+            f"Found   : {len(original_program):,}"
+        )
+
+    original_program_sha = sha256_bytes(
+        original_program
+    )
+
+    print(
+        f"Program SHA   : "
+        f"{original_program_sha}"
+    )
+
+    if original_program_sha != EXPECTED_ORIGINAL_PROGRAM_SHA256:
+        fail(
+            "Original main PROGRAM SHA-256 mismatch.\n\n"
+            f"Expected:\n{EXPECTED_ORIGINAL_PROGRAM_SHA256}\n\n"
+            f"Found:\n{original_program_sha}"
+        )
+
+    # Patch location
+
+    original_instruction = original_program[
+        PATCH_INSTRUCTION_OFFSET:
+        PATCH_INSTRUCTION_OFFSET + 2
+    ]
+
+    original_byte = original_program[
         PATCH_BYTE_OFFSET
     ]
 
     print()
-    print("-" * 60)
-    print("Patch location verification")
-    print("-" * 60)
-    print()
-
     print(
-        f"Instruction offset : "
-        f"0x{PATCH_INSTRUCTION_OFFSET:08X}"
+        f"Instruction   : "
+        f"{format_bytes(original_instruction)}"
     )
 
     print(
-        f"Expected instruction: "
-        f"{EXPECTED_ORIGINAL_INSTRUCTION.hex(' ').upper()}"
+        f"Patch byte    : "
+        f"0x{original_byte:02X} "
+        f"at 0x{PATCH_BYTE_OFFSET:08X}"
     )
-
-    print(
-        f"Found instruction   : "
-        f"{original_instruction.hex(' ').upper()}"
-    )
-
-    # -------------------------------------------------------------------------
-    # Validate complete original instruction
-    # -------------------------------------------------------------------------
 
     if original_instruction != EXPECTED_ORIGINAL_INSTRUCTION:
         fail(
-            "Unexpected instruction at the patch location.\n\n"
-            f"Offset  : 0x{PATCH_INSTRUCTION_OFFSET:08X}\n"
-            f"Expected: "
-            f"{EXPECTED_ORIGINAL_INSTRUCTION.hex(' ').upper()}\n"
-            f"Found   : "
-            f"{original_instruction.hex(' ').upper()}\n\n"
-            "The firmware will not be modified."
+            "Unexpected original instruction at patch location.\n\n"
+            f"Expected: {format_bytes(EXPECTED_ORIGINAL_INSTRUCTION)}\n"
+            f"Found   : {format_bytes(original_instruction)}"
         )
 
-    # -------------------------------------------------------------------------
-    # Validate exact byte to be modified
-    # -------------------------------------------------------------------------
-
-    print()
-    print(
-        f"Patch byte offset   : "
-        f"0x{PATCH_BYTE_OFFSET:08X}"
-    )
-
-    print(
-        f"Expected byte       : "
-        f"0x{EXPECTED_ORIGINAL_BYTE:02X}"
-    )
-
-    print(
-        f"Found byte          : "
-        f"0x{original_patch_byte:02X}"
-    )
-
-    if original_patch_byte != EXPECTED_ORIGINAL_BYTE:
+    if original_byte != EXPECTED_ORIGINAL_BYTE:
         fail(
-            "Unexpected byte at the patch location.\n\n"
-            f"Offset  : 0x{PATCH_BYTE_OFFSET:08X}\n"
-            f"Expected: 0x{EXPECTED_ORIGINAL_BYTE:02X}\n"
-            f"Found   : 0x{original_patch_byte:02X}\n\n"
-            "The firmware will not be modified."
+            "Unexpected original patch byte."
+        )
+
+    # Secondary block
+
+    print()
+    print("-" * 68)
+    print("Secondary PROGRAM")
+    print("-" * 68)
+    print()
+
+    print(
+        f"Flash address : "
+        f"0x{secondary_block['flash_address']:08X}"
+    )
+
+    print(
+        f"Program size  : "
+        f"{len(secondary_program):,} bytes"
+    )
+
+    if len(secondary_program) != EXPECTED_SECONDARY_PROGRAM_SIZE:
+        fail(
+            "Unexpected secondary PROGRAM size.\n\n"
+            f"Expected: {EXPECTED_SECONDARY_PROGRAM_SIZE:,}\n"
+            f"Found   : {len(secondary_program):,}"
+        )
+
+    print()
+    print("Main PROGRAM      : OK")
+    print("Main PROGRAM SHA  : OK")
+    print("Patch location    : OK")
+    print("Secondary PROGRAM : OK")
+
+    return (
+        original_program,
+        secondary_program,
+        main_block,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Patch main PROGRAM
+# -----------------------------------------------------------------------------
+
+def create_patched_program(
+    original_program: bytes,
+) -> bytes:
+
+    print()
+    print("=" * 68)
+    print("Creating patched PROGRAM in memory")
+    print("=" * 68)
+    print()
+
+    if original_program[PATCH_BYTE_OFFSET] != EXPECTED_ORIGINAL_BYTE:
+        fail(
+            "Pre-patch safety check failed."
+        )
+
+    if (
+        original_program[
+            PATCH_INSTRUCTION_OFFSET:
+            PATCH_INSTRUCTION_OFFSET + 2
+        ]
+        != EXPECTED_ORIGINAL_INSTRUCTION
+    ):
+        fail(
+            "Pre-patch instruction check failed."
+        )
+
+    patched = bytearray(
+        original_program
+    )
+
+    patched[
+        PATCH_BYTE_OFFSET
+    ] = EXPECTED_PATCHED_BYTE
+
+    patched_program = bytes(
+        patched
+    )
+
+    # Size
+
+    if len(patched_program) != len(original_program):
+        fail(
+            "Patched PROGRAM size changed unexpectedly."
+        )
+
+    # Differences
+
+    differences = [
+        index
+        for index, (old, new) in enumerate(
+            zip(
+                original_program,
+                patched_program,
+            )
+        )
+        if old != new
+    ]
+
+    print(
+        f"Changed bytes       : "
+        f"{len(differences)}"
+    )
+
+    if differences != [PATCH_BYTE_OFFSET]:
+        fail(
+            "Unexpected PROGRAM differences.\n\n"
+            f"Expected only: 0x{PATCH_BYTE_OFFSET:08X}\n"
+            f"Found         : "
+            + ", ".join(
+                f"0x{x:08X}"
+                for x in differences
+            )
+        )
+
+    print(
+        f"Changed offset      : "
+        f"0x{differences[0]:08X}"
+    )
+
+    old_byte = original_program[
+        PATCH_BYTE_OFFSET
+    ]
+
+    new_byte = patched_program[
+        PATCH_BYTE_OFFSET
+    ]
+
+    print(
+        f"Byte change         : "
+        f"{old_byte:02X} -> {new_byte:02X}"
+    )
+
+    if (
+        old_byte != EXPECTED_ORIGINAL_BYTE
+        or new_byte != EXPECTED_PATCHED_BYTE
+    ):
+        fail(
+            "Unexpected byte transition."
+        )
+
+    # Instruction
+
+    patched_instruction = patched_program[
+        PATCH_INSTRUCTION_OFFSET:
+        PATCH_INSTRUCTION_OFFSET + 2
+    ]
+
+    print(
+        f"Patched instruction : "
+        f"{format_bytes(patched_instruction)}"
+    )
+
+    if patched_instruction != EXPECTED_PATCHED_INSTRUCTION:
+        fail(
+            "Patched instruction validation failed."
+        )
+
+    # Hash
+
+    patched_sha = sha256_bytes(
+        patched_program
+    )
+
+    print(
+        f"Patched SHA-256     : "
+        f"{patched_sha}"
+    )
+
+    if patched_sha != EXPECTED_PATCHED_PROGRAM_SHA256:
+        fail(
+            "Patched PROGRAM SHA-256 mismatch.\n\n"
+            f"Expected:\n{EXPECTED_PATCHED_PROGRAM_SHA256}\n\n"
+            f"Found:\n{patched_sha}"
+        )
+
+    # Original still unchanged
+
+    if original_program[PATCH_BYTE_OFFSET] != EXPECTED_ORIGINAL_BYTE:
+        fail(
+            "Original PROGRAM was unexpectedly modified."
+        )
+
+    print()
+    print("PROGRAM patch       : OK")
+    print("Changed byte count  : OK")
+    print("Changed offset      : OK")
+    print("Patched instruction : OK")
+    print("Patched SHA-256     : OK")
+
+    return patched_program
+
+
+# -----------------------------------------------------------------------------
+# Rebuild GBL in memory
+# -----------------------------------------------------------------------------
+
+def rebuild_gbl(
+    original_gbl: bytes,
+    main_block: dict,
+    patched_program: bytes,
+) -> bytes:
+
+    print()
+    print("=" * 68)
+    print("Rebuilding patched GBL in memory")
+    print("=" * 68)
+    print()
+
+    if len(patched_program) != EXPECTED_MAIN_PROGRAM_SIZE:
+        fail(
+            "Refusing to rebuild GBL: patched PROGRAM has wrong size."
+        )
+
+    rebuilt = bytearray(
+        original_gbl
+    )
+
+    program_start = main_block[
+        "data_start"
+    ]
+
+    program_end = main_block[
+        "data_end"
+    ]
+
+    if (
+        program_end - program_start
+        != len(patched_program)
+    ):
+        fail(
+            "PROGRAM replacement range has unexpected size."
+        )
+
+    # Replace only main PROGRAM data
+
+    rebuilt[
+        program_start:
+        program_end
+    ] = patched_program
+
+    # Recalculate CRC32.
+    #
+    # The final four bytes contain the stored CRC.
+    # CRC is calculated over everything before those four bytes.
+
+    new_crc = zlib.crc32(
+        rebuilt[:-4]
+    ) & 0xFFFFFFFF
+
+    print(
+        f"New CRC32           : "
+        f"0x{new_crc:08X}"
+    )
+
+    if new_crc != EXPECTED_PATCHED_GBL_CRC32:
+        fail(
+            "Generated CRC32 does not match expected patched CRC32.\n\n"
+            f"Expected: 0x{EXPECTED_PATCHED_GBL_CRC32:08X}\n"
+            f"Found   : 0x{new_crc:08X}"
+        )
+
+    rebuilt[-4:] = struct.pack(
+        "<I",
+        new_crc,
+    )
+
+    patched_gbl = bytes(
+        rebuilt
+    )
+
+    if len(patched_gbl) != len(original_gbl):
+        fail(
+            "Rebuilt GBL size differs from original."
+        )
+
+    print(
+        f"Rebuilt GBL size    : "
+        f"{len(patched_gbl):,} bytes"
+    )
+
+    print("GBL rebuild         : OK")
+
+    return patched_gbl
+
+
+# -----------------------------------------------------------------------------
+# Final patched GBL validation
+# -----------------------------------------------------------------------------
+
+def validate_patched_gbl(
+    original_gbl: bytes,
+    patched_gbl: bytes,
+    original_secondary_program: bytes,
+) -> str:
+
+    print()
+    print("=" * 68)
+    print("Final patched GBL validation")
+    print("=" * 68)
+    print()
+
+    # Size
+
+    if len(patched_gbl) != EXPECTED_PATCHED_GBL_SIZE:
+        fail(
+            "Final patched GBL has unexpected size.\n\n"
+            f"Expected: {EXPECTED_PATCHED_GBL_SIZE:,}\n"
+            f"Found   : {len(patched_gbl):,}"
+        )
+
+    print(
+        f"File size           : "
+        f"{len(patched_gbl):,} bytes"
+    )
+
+    # Parse entire rebuilt GBL and validate CRC
+
+    patched_tags = validate_gbl_structure(
+        patched_gbl,
+        label="Patched GBL",
+    )
+
+    # PROGRAM blocks
+
+    patched_blocks = get_program_blocks(
+        patched_gbl,
+        patched_tags,
+    )
+
+    if len(patched_blocks) != 2:
+        fail(
+            "Final GBL does not contain exactly two PROGRAM blocks."
+        )
+
+    patched_main = find_program_block(
+        patched_blocks,
+        EXPECTED_MAIN_FLASH_ADDRESS,
+    )
+
+    patched_secondary = find_program_block(
+        patched_blocks,
+        EXPECTED_SECONDARY_FLASH_ADDRESS,
+    )
+
+    patched_main_program = patched_main[
+        "program_data"
+    ]
+
+    patched_secondary_program = patched_secondary[
+        "program_data"
+    ]
+
+    # Main PROGRAM hash
+
+    final_program_sha = sha256_bytes(
+        patched_main_program
+    )
+
+    print()
+    print(
+        f"Main PROGRAM SHA    : "
+        f"{final_program_sha}"
+    )
+
+    if final_program_sha != EXPECTED_PATCHED_PROGRAM_SHA256:
+        fail(
+            "Final GBL main PROGRAM SHA-256 mismatch."
+        )
+
+    # Patch instruction
+
+    final_instruction = patched_main_program[
+        PATCH_INSTRUCTION_OFFSET:
+        PATCH_INSTRUCTION_OFFSET + 2
+    ]
+
+    print(
+        f"Final instruction   : "
+        f"{format_bytes(final_instruction)}"
+    )
+
+    if final_instruction != EXPECTED_PATCHED_INSTRUCTION:
+        fail(
+            "Final GBL does not contain the expected patched instruction."
+        )
+
+    # Secondary PROGRAM must be identical
+
+    if patched_secondary_program != original_secondary_program:
+        fail(
+            "Secondary PROGRAM block was modified unexpectedly."
+        )
+
+    print(
+        "Secondary PROGRAM   : unchanged"
+    )
+
+    # -------------------------------------------------------------------------
+    # Compare complete original and patched GBL
+    # -------------------------------------------------------------------------
+
+    differences = [
+        index
+        for index, (old, new) in enumerate(
+            zip(
+                original_gbl,
+                patched_gbl,
+            )
+        )
+        if old != new
+    ]
+
+    print()
+    print(
+        f"GBL changed bytes   : "
+        f"{len(differences)}"
+    )
+
+    if len(differences) != 5:
+        fail(
+            "Unexpected number of changed bytes in final GBL.\n\n"
+            f"Expected: 5\n"
+            f"Found   : {len(differences)}"
+        )
+
+    # Expected absolute GBL offset of firmware patch
+
+    expected_gbl_patch_offset = (
+        patched_main["data_start"]
+        + PATCH_BYTE_OFFSET
+    )
+
+    # Final four bytes are the CRC32.
+
+    expected_difference_offsets = [
+        expected_gbl_patch_offset,
+        len(patched_gbl) - 4,
+        len(patched_gbl) - 3,
+        len(patched_gbl) - 2,
+        len(patched_gbl) - 1,
+    ]
+
+    if differences != expected_difference_offsets:
+        fail(
+            "Final GBL contains changes at unexpected offsets.\n\n"
+            "Expected:\n"
+            + "\n".join(
+                f"  0x{x:08X}"
+                for x in expected_difference_offsets
+            )
+            + "\n\nFound:\n"
+            + "\n".join(
+                f"  0x{x:08X}"
+                for x in differences
+            )
+        )
+
+    print()
+    print("Changed offsets:")
+
+    for offset in differences:
+        print(
+            f"  0x{offset:08X}: "
+            f"{original_gbl[offset]:02X} -> "
+            f"{patched_gbl[offset]:02X}"
+        )
+
+    # Verify actual patch byte at absolute GBL offset
+
+    if (
+        original_gbl[expected_gbl_patch_offset]
+        != EXPECTED_ORIGINAL_BYTE
+    ):
+        fail(
+            "Original GBL patch byte is unexpected."
+        )
+
+    if (
+        patched_gbl[expected_gbl_patch_offset]
+        != EXPECTED_PATCHED_BYTE
+    ):
+        fail(
+            "Final GBL patch byte is unexpected."
+        )
+
+    # Verify final stored CRC
+
+    stored_crc = struct.unpack_from(
+        "<I",
+        patched_gbl,
+        len(patched_gbl) - 4,
+    )[0]
+
+    calculated_crc = zlib.crc32(
+        patched_gbl[:-4]
+    ) & 0xFFFFFFFF
+
+    print()
+    print(
+        f"Final stored CRC32  : "
+        f"0x{stored_crc:08X}"
+    )
+
+    print(
+        f"Final calc. CRC32   : "
+        f"0x{calculated_crc:08X}"
+    )
+
+    if stored_crc != EXPECTED_PATCHED_GBL_CRC32:
+        fail(
+            "Final stored CRC32 does not match expected value."
+        )
+
+    if calculated_crc != EXPECTED_PATCHED_GBL_CRC32:
+        fail(
+            "Final calculated CRC32 does not match expected value."
+        )
+
+    # Final SHA-256
+
+    final_sha = sha256_bytes(
+        patched_gbl
+    )
+
+    print()
+    print(
+        f"Final GBL SHA-256   : "
+        f"{final_sha}"
+    )
+
+    if final_sha != EXPECTED_PATCHED_GBL_SHA256:
+        fail(
+            "Final patched GBL SHA-256 mismatch.\n\n"
+            f"Expected:\n{EXPECTED_PATCHED_GBL_SHA256}\n\n"
+            f"Found:\n{final_sha}"
+        )
+
+    print()
+    print("Final file size     : OK")
+    print("Final GBL structure : OK")
+    print("Final GBL CRC32     : OK")
+    print("Main PROGRAM        : OK")
+    print("Secondary PROGRAM   : unchanged")
+    print("Changed byte count  : OK")
+    print("Changed offsets     : OK")
+    print("Final GBL SHA-256   : OK")
+
+    return final_sha
+
+
+# -----------------------------------------------------------------------------
+# Safely write final output
+# -----------------------------------------------------------------------------
+
+def write_output(
+    output_path: Path,
+    patched_gbl: bytes,
+    expected_sha256: str,
+) -> None:
+
+    print()
+    print("=" * 68)
+    print("Writing final patched firmware")
+    print("=" * 68)
+    print()
+
+    # Do not silently overwrite an existing file.
+
+    if output_path.exists():
+        fail(
+            "Output file already exists.\n\n"
+            f"{output_path}\n\n"
+            "Delete or rename the existing file before running "
+            "the patcher again."
+        )
+
+    try:
+        output_path.write_bytes(
+            patched_gbl
+        )
+    except OSError as exc:
+        fail(
+            "Could not write output file.\n\n"
+            f"{exc}"
         )
 
     # -------------------------------------------------------------------------
-    # Show future patch
+    # Re-read the physical file from disk.
+    #
+    # This verifies what was actually written, rather than only the
+    # in-memory object.
     # -------------------------------------------------------------------------
 
+    try:
+        written_data = output_path.read_bytes()
+    except OSError as exc:
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        fail(
+            "Could not re-read output file for final verification.\n\n"
+            f"{exc}"
+        )
+
+    written_sha = sha256_bytes(
+        written_data
+    )
+
+    if written_data != patched_gbl:
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        fail(
+            "Data read back from the output file differs from "
+            "the validated in-memory firmware."
+        )
+
+    if written_sha != expected_sha256:
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        fail(
+            "Output file SHA-256 verification failed after writing.\n\n"
+            f"Expected:\n{expected_sha256}\n\n"
+            f"Found:\n{written_sha}"
+        )
+
+    print(
+        f"Output file         : "
+        f"{output_path}"
+    )
+
+    print(
+        f"File size           : "
+        f"{len(written_data):,} bytes"
+    )
+
+    print(
+        f"SHA-256             : "
+        f"{written_sha}"
+    )
+
     print()
-    print(
-        f"Original instruction: "
-        f"{EXPECTED_ORIGINAL_INSTRUCTION.hex(' ').upper()}"
-    )
-
-    print(
-        f"Future instruction  : "
-        f"{EXPECTED_PATCHED_INSTRUCTION.hex(' ').upper()}"
-    )
-
-    print(
-        f"Future byte change  : "
-        f"0x{EXPECTED_ORIGINAL_BYTE:02X} -> "
-        f"0x{EXPECTED_PATCHED_BYTE:02X}"
-    )
-
-    print()
-    print("Main PROGRAM block : OK")
-    print("Program SHA-256    : OK")
-    print("Patch instruction  : OK")
-    print("Patch byte         : OK")
-
-    return program_data
+    print("Disk write          : OK")
+    print("Read-back           : OK")
+    print("Read-back SHA-256   : OK")
 
 
 # -----------------------------------------------------------------------------
@@ -697,13 +1231,14 @@ def validate_main_program(
 # -----------------------------------------------------------------------------
 
 def main() -> None:
+
     print()
     print("Shelly TRV 2.2.4 Beacon-Skip Firmware Patcher")
-    print("=" * 60)
+    print("=" * 68)
     print()
 
     # -------------------------------------------------------------------------
-    # Command-line argument
+    # Input argument
     # -------------------------------------------------------------------------
 
     if len(sys.argv) != 2:
@@ -714,165 +1249,225 @@ def main() -> None:
             '"<path-to-original-firmware.gbl>"'
         )
         print()
-        print("Example:")
-        print()
-        print(
-            f'  python {Path(sys.argv[0]).name} '
-            '"C:\\path\\to\\SHTRV-01_build.gbl"'
-        )
-        print()
 
         raise SystemExit(2)
 
-    firmware_path = Path(
+    input_path = Path(
         sys.argv[1]
     ).expanduser().resolve()
 
-    print(f"Input file  : {firmware_path}")
+    print(
+        f"Input file          : "
+        f"{input_path}"
+    )
 
-    # -------------------------------------------------------------------------
-    # Check input file
-    # -------------------------------------------------------------------------
-
-    if not firmware_path.exists():
+    if not input_path.exists():
         fail(
             "Input firmware does not exist.\n\n"
-            f"Path:\n{firmware_path}"
+            f"{input_path}"
         )
 
-    if not firmware_path.is_file():
+    if not input_path.is_file():
         fail(
-            "Input path is not a file.\n\n"
-            f"Path:\n{firmware_path}"
+            "Input path is not a file."
         )
 
     # -------------------------------------------------------------------------
-    # File size
+    # Read original GBL
     # -------------------------------------------------------------------------
 
     try:
-        file_size = firmware_path.stat().st_size
+        original_gbl = input_path.read_bytes()
     except OSError as exc:
         fail(
-            "Could not determine firmware file size.\n\n"
+            "Could not read input firmware.\n\n"
             f"{exc}"
         )
 
-    print(f"File size   : {file_size:,} bytes")
+    # -------------------------------------------------------------------------
+    # Exact original firmware identity
+    # -------------------------------------------------------------------------
 
-    if file_size != EXPECTED_SIZE:
+    print(
+        f"File size           : "
+        f"{len(original_gbl):,} bytes"
+    )
+
+    if len(original_gbl) != EXPECTED_ORIGINAL_GBL_SIZE:
         fail(
             "Unsupported firmware size.\n\n"
-            f"Expected: {EXPECTED_SIZE:,} bytes\n"
-            f"Found   : {file_size:,} bytes\n\n"
-            "This patcher only supports the specifically analyzed "
-            "Shelly TRV firmware 2.2.4 image."
+            f"Expected: {EXPECTED_ORIGINAL_GBL_SIZE:,}\n"
+            f"Found   : {len(original_gbl):,}"
         )
 
-    # -------------------------------------------------------------------------
-    # Complete firmware SHA-256
-    # -------------------------------------------------------------------------
+    print(
+        "SHA-256             : calculating..."
+    )
 
-    print("SHA-256     : calculating...")
+    original_sha = sha256_bytes(
+        original_gbl
+    )
 
-    try:
-        actual_sha256 = sha256_file(
-            firmware_path
-        )
-    except OSError as exc:
+    print(
+        f"SHA-256             : "
+        f"{original_sha}"
+    )
+
+    if original_sha != EXPECTED_ORIGINAL_GBL_SHA256:
         fail(
-            "Could not calculate firmware SHA-256.\n\n"
-            f"{exc}"
+            "Input firmware SHA-256 does not match the supported "
+            "Shelly TRV 2.2.4 firmware.\n\n"
+            f"Expected:\n{EXPECTED_ORIGINAL_GBL_SHA256}\n\n"
+            f"Found:\n{original_sha}"
         )
-
-    print(f"SHA-256     : {actual_sha256}")
-
-    if actual_sha256.lower() != EXPECTED_SHA256.lower():
-        fail(
-            "Firmware SHA-256 does not match the supported "
-            "Shelly TRV 2.2.4 firmware image.\n\n"
-            f"Expected:\n"
-            f"{EXPECTED_SHA256}\n\n"
-            f"Found:\n"
-            f"{actual_sha256}\n\n"
-            "The firmware will not be modified."
-        )
-
-    # -------------------------------------------------------------------------
-    # Firmware identity successful
-    # -------------------------------------------------------------------------
 
     print()
     print("Firmware identity verification successful.")
     print()
-    print(f"Device       : {SUPPORTED_DEVICE}")
-    print(f"Firmware     : {SUPPORTED_VERSION}")
-    print(f"Build        : {SUPPORTED_BUILD}")
-    print("File size    : OK")
-    print("SHA-256      : OK")
+    print(f"Device               : {SUPPORTED_DEVICE}")
+    print(f"Firmware             : {SUPPORTED_VERSION}")
+    print(f"Build                : {SUPPORTED_BUILD}")
+    print("File size            : OK")
+    print("SHA-256              : OK")
 
     # -------------------------------------------------------------------------
-    # Validate GBL
+    # Original GBL structure
     # -------------------------------------------------------------------------
 
-    gbl_data, tags = validate_gbl(
-        firmware_path
+    original_tags = validate_gbl_structure(
+        original_gbl,
+        label="Original GBL",
+    )
+
+    original_stored_crc = struct.unpack_from(
+        "<I",
+        original_gbl,
+        len(original_gbl) - 4,
+    )[0]
+
+    if original_stored_crc != EXPECTED_ORIGINAL_GBL_CRC32:
+        fail(
+            "Original GBL CRC32 does not match the known supported image.\n\n"
+            f"Expected: 0x{EXPECTED_ORIGINAL_GBL_CRC32:08X}\n"
+            f"Found   : 0x{original_stored_crc:08X}"
+        )
+
+    # -------------------------------------------------------------------------
+    # Original PROGRAM blocks
+    # -------------------------------------------------------------------------
+
+    (
+        original_program,
+        original_secondary_program,
+        main_block,
+    ) = validate_original_programs(
+        original_gbl,
+        original_tags,
     )
 
     # -------------------------------------------------------------------------
-    # Validate main PROGRAM block and patch location
+    # Patch main PROGRAM in memory
     # -------------------------------------------------------------------------
 
-    program_data = validate_main_program(
-        gbl_data,
-        tags,
+    patched_program = create_patched_program(
+        original_program
     )
 
-    # Keep this available for the next implementation stage.
-    _ = program_data
-
     # -------------------------------------------------------------------------
-    # Final result
+    # Rebuild GBL in memory
     # -------------------------------------------------------------------------
 
+    patched_gbl = rebuild_gbl(
+        original_gbl,
+        main_block,
+        patched_program,
+    )
+
+    # -------------------------------------------------------------------------
+    # Validate complete patched GBL
+    # -------------------------------------------------------------------------
+
+    final_sha = validate_patched_gbl(
+        original_gbl,
+        patched_gbl,
+        original_secondary_program,
+    )
+
+    # -------------------------------------------------------------------------
+    # Everything has passed.
+    #
+    # Only NOW are we allowed to create the output file.
+    # -------------------------------------------------------------------------
+
+    output_path = (
+        input_path.parent
+        / OUTPUT_FILENAME
+    )
+
+    write_output(
+        output_path,
+        patched_gbl,
+        final_sha,
+    )
+
+    # -------------------------------------------------------------------------
+    # Success
+    # -------------------------------------------------------------------------
+
     print()
-    print("=" * 60)
-    print("VALIDATION SUCCESSFUL")
-    print("=" * 60)
+    print("=" * 68)
+    print("PATCHING COMPLETED SUCCESSFULLY")
+    print("=" * 68)
     print()
 
-    print(f"Device       : {SUPPORTED_DEVICE}")
-    print(f"Firmware     : {SUPPORTED_VERSION}")
-    print(f"Build        : {SUPPORTED_BUILD}")
+    print(f"Device               : {SUPPORTED_DEVICE}")
+    print(f"Firmware             : {SUPPORTED_VERSION}")
+    print(f"Build                : {SUPPORTED_BUILD}")
 
-    print()
-    print("Input file       : OK")
-    print("File size        : OK")
-    print("Firmware SHA-256 : OK")
-    print("GBL structure    : OK")
-    print("GBL header       : OK")
-    print("GBL CRC32        : OK")
-    print("Main PROGRAM     : OK")
-    print("Program size     : OK")
-    print("Program SHA-256  : OK")
-    print("Patch instruction: OK")
-    print("Patch byte       : OK")
-
-    print()
-    print("The firmware is ready for the patching stage.")
     print()
     print(
-        f"Verified future modification:"
-    )
-    print(
-        f"  Program offset 0x{PATCH_BYTE_OFFSET:08X}: "
+        f"Patch                : "
+        f"0x{PATCH_BYTE_OFFSET:08X} "
         f"{EXPECTED_ORIGINAL_BYTE:02X} -> "
         f"{EXPECTED_PATCHED_BYTE:02X}"
     )
 
+    print(
+        f"Instruction          : "
+        f"{format_bytes(EXPECTED_ORIGINAL_INSTRUCTION)} -> "
+        f"{format_bytes(EXPECTED_PATCHED_INSTRUCTION)}"
+    )
+
     print()
-    print("No modifications have been made yet.")
-    print("No output firmware has been created.")
+    print("Original GBL         : VERIFIED")
+    print("Original CRC32       : VERIFIED")
+    print("Original PROGRAM     : VERIFIED")
+    print("Patch location       : VERIFIED")
+    print("Patched PROGRAM      : VERIFIED")
+    print("Secondary PROGRAM    : UNCHANGED")
+    print("Rebuilt GBL          : VERIFIED")
+    print("Final CRC32          : VERIFIED")
+    print("Final SHA-256        : VERIFIED")
+    print("Disk read-back       : VERIFIED")
+
+    print()
+    print(
+        f"Patched firmware:"
+    )
+    print(
+        f"  {output_path}"
+    )
+
+    print()
+    print(
+        f"SHA-256:"
+    )
+    print(
+        f"  {final_sha}"
+    )
+
+    print()
+    print("The tool does not flash the device automatically.")
     print()
 
 
