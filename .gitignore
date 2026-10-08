@@ -28,6 +28,7 @@ test_output/
 *.tmp
 *.bak
 *.log
+*.pdf
 
 # IDE / editor
 .vscode/
