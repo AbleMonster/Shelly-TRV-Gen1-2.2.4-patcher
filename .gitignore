@@ -1,0 +1,41 @@
+# ============================================================
+# Shelly TRV 2.2.4 Patcher
+# ============================================================
+
+# Firmware / binary images
+*.gbl
+*.bin
+*.hex
+*.img
+
+# Generated patched firmware
+*_patch.gbl
+*_patched.gbl
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Test / temporary files
+tmp/
+temp/
+test_output/
+*.tmp
+*.bak
+*.log
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
