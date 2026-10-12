@@ -1,23 +1,31 @@
 # Shelly TRV Gen1 2.2.4 Firmware Patcher
 
 Local patching and OTA installation tools for the Shelly TRV (SHTRV-01)
-firmware 2.2.4 beacon-skip recovery modification.
+firmware 2.2.4.
 
 > **Experimental software**
 >
 > This project is currently under development and should be considered
 > experimental.
 >
-> The firmware modification has been successfully installed and tested on
-> physical Shelly TRV devices. Long-term stability and battery-consumption
-> testing is still in progress.
+> The combined firmware modification has been successfully generated,
+> validated, installed and booted on a physical Shelly TRV.
+>
+> Runtime validation and long-term battery-consumption testing are still
+> in progress.
 
 ## Purpose
 
 This project creates a patched Shelly TRV 2.2.4 firmware image from an
 original firmware file supplied locally by the user.
 
-The patch targets the recurring firmware behavior:
+The current patch contains two modifications derived from reverse-engineering
+and runtime analysis of the specifically supported firmware build:
+
+1. **Beacon-skip recovery bypass**
+2. **Periodic mDNS restart bypass**
+
+The beacon-skip patch targets the recurring firmware behavior:
 
 ```text
 Beacon skip error! Attempt recovery
@@ -28,12 +36,17 @@ Enter powersave state 3 (skip N)
 The patch bypasses the additional recovery path while preserving the normal
 RSSI-dependent beacon-skip mechanism.
 
-The modification was derived from reverse-engineering and runtime analysis of
-the specifically supported Shelly TRV firmware build.
+The second patch bypasses a recurring connected-state mDNS restart path that
+was observed during runtime analysis.
 
-This project is intentionally limited to that known firmware image. It is not
+The normal mDNS responder and event-driven mDNS initialization paths are not
+intentionally disabled by this modification.
+
+This project is intentionally limited to one known firmware image. It is not
 intended to be a general-purpose Shelly firmware patcher or GBL manipulation
 tool.
+
+---
 
 ## Firmware distribution
 
@@ -41,13 +54,13 @@ tool.
 
 Users must obtain the original firmware independently.
 
-The patcher operates locally and:
+The patcher operates entirely on a local firmware file and:
 
-1. validates the supplied firmware,
+1. validates the original firmware,
 2. verifies the expected GBL structure,
 3. extracts the relevant program block,
-4. verifies the original patch location,
-5. applies the one-byte modification,
+4. verifies both original patch locations,
+5. applies the two byte modifications,
 6. validates the patched program data,
 7. rebuilds the GBL container,
 8. recalculates its CRC32,
@@ -59,6 +72,8 @@ The patched firmware is not uploaded anywhere by the patching tool.
 The included OTA server can subsequently make the locally generated patched
 firmware available to a Shelly TRV on the user's local network.
 
+---
+
 ## Supported firmware
 
 Currently only the specifically analyzed Shelly TRV firmware is supported:
@@ -69,14 +84,28 @@ Version:  2.2.4
 Build:    20240619-130912/v2.2.4@ee290818
 ```
 
+Original GBL size:
+
+```text
+1,106,384 bytes
+```
+
 Original GBL SHA-256:
 
 ```text
 5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
 ```
 
+Original main PROGRAM SHA-256:
+
+```text
+4dc770fe535008ef150f3a144354169199e1a0e235173abcc3f7387b95ee9b5c
+```
+
 The patcher will refuse to modify firmware that does not match the expected
 firmware image.
+
+---
 
 ## Requirements
 
@@ -85,49 +114,128 @@ firmware image.
 - a computer on the same local network as the Shelly TRV for OTA installation
 - no third-party Python packages are required
 
-Both `patch_firmware.py` and `ota_server.py` use only the Python standard
+Both `patch_firmware_v.1.0.py` and `ota_server.py` use only the Python standard
 library.
+
+---
+
+## Repository layout
+
+The patcher uses a fixed local `target` directory for firmware input and
+output:
+
+```text
+Shelly_TRV_2.2.4_Patcher/
+├── patch_firmware_v.1.0.py
+├── ota_server.py
+├── README.md
+├── target/
+│   └── .gitkeep
+└── tests/
+    └── README.md
+```
+
+The `target` directory is part of the repository, but firmware files inside
+that directory must not be committed.
+
+The user supplies the original firmware locally as:
+
+```text
+target/SHTRV-01_build_2.2.4.gbl
+```
+
+After successful patching, the generated firmware is written automatically as:
+
+```text
+target/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
+```
+
+Both the original and patched GBL files remain local.
+
+---
 
 ## Quick start
 
-The complete workflow is:
+### 1. Obtain the original firmware
 
-1. Obtain the original supported Shelly TRV 2.2.4 GBL firmware.
-2. Verify the original firmware with `patch_firmware.py`.
-3. Create the patched GBL.
-4. Start `ota_server.py` with the patched GBL.
-5. Use the OTA URL printed by the server for the target Shelly TRV.
-6. Keep the OTA server running until the firmware transfer has completed.
-7. Wait for the TRV to reboot.
-8. Verify the installed firmware version and normal device operation.
+Obtain the supported Shelly TRV 2.2.4 GBL firmware independently.
 
-### 1. Verify the original firmware
+The file must match:
 
 ```text
-python patch_firmware.py ORIGINAL.gbl --verify
+Version:
+20240619-130912/v2.2.4@ee290818
+
+Size:
+1,106,384 bytes
+
+SHA-256:
+5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
+```
+
+### 2. Place the original firmware in `target`
+
+The original firmware must be named:
+
+```text
+SHTRV-01_build_2.2.4.gbl
+```
+
+and placed at:
+
+```text
+target/SHTRV-01_build_2.2.4.gbl
+```
+
+The patcher deliberately uses this fixed location and filename.
+
+No firmware path has to be supplied on the command line.
+
+### 3. Verify the original firmware
+
+Run:
+
+```bash
+python3 patch_firmware_v.1.0.py --verify
 ```
 
 The firmware must pass all validation checks before it can be patched.
 
-### 2. Create the patched firmware
+### 4. Create the patched firmware
 
-```text
-python patch_firmware.py ORIGINAL.gbl
+Run:
+
+```bash
+python3 patch_firmware_v.1.0.py
 ```
 
-The default output file is:
+If all validation and patching steps succeed, the output is written
+automatically to:
 
 ```text
-SHTRV-01_2.2.4_patch.gbl
+target/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
 ```
 
-### 3. Start the OTA server
+The patcher validates the written file after creation.
+
+### 5. Start the OTA server
+
+On systems where binding to TCP port 80 requires elevated privileges:
+
+```bash
+sudo python3 ota_server.py
+```
+
+The OTA server automatically uses:
 
 ```text
-python ota_server.py SHTRV-01_2.2.4_patch.gbl
+target/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
 ```
 
-The OTA server validates the patched firmware before serving it.
+No firmware path has to be supplied.
+
+Before starting the HTTP server, the firmware is independently validated
+against the expected patched size, SHA-256 and CRC32.
 
 If validation succeeds, the server automatically:
 
@@ -143,47 +251,36 @@ If validation succeeds, the server automatically:
 Example firmware URL:
 
 ```text
-http://192.168.178.159/SHTRV-01_2.2.4_patch.gbl
+http://192.168.178.232/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
 ```
 
 The actual IP address and port are detected automatically and may differ.
 
-### 4. Start the OTA update
+### 6. Start the OTA update
 
-The server prints an OTA URL in the following form:
+The OTA endpoint of the target TRV can be called with the firmware URL served
+by `ota_server.py`.
 
-```text
-http://<SHELLY-TRV-IP>/ota?url=http://192.168.178.159/SHTRV-01_2.2.4_patch.gbl
-```
-
-Replace:
+General form:
 
 ```text
-<SHELLY-TRV-IP>
+http://<SHELLY-TRV-IP>/ota?url=http://<COMPUTER-IP>/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
 ```
 
-with the IP address of the Shelly TRV that should receive the firmware.
+Example using `curl`:
 
-For example, if the TRV has the local IP address:
-
-```text
-192.168.178.88
+```bash
+curl "http://192.168.178.226/ota?url=http://192.168.178.232/SHTRV-01_2.2.4_beacon_mdns_patch.gbl"
 ```
 
-the resulting URL would be:
+Use the actual IP addresses printed or configured in your local network.
 
-```text
-http://192.168.178.88/ota?url=http://192.168.178.159/SHTRV-01_2.2.4_patch.gbl
-```
+If the OTA server selected port 8000 instead of port 80, include `:8000` in
+the firmware URL.
 
-Open the resulting OTA URL while `ota_server.py` is still running.
+Keep `ota_server.py` running until the firmware transfer has completed.
 
-If port 8000 was selected instead of port 80, the server-generated firmware
-URL will contain `:8000`.
-
-Do not close the OTA server while the firmware is being transferred.
-
-### 5. Verify the device after OTA
+### 7. Verify the device after OTA
 
 A completed HTTP transfer means that the OTA server successfully served the
 firmware data requested by the device.
@@ -199,6 +296,8 @@ Verify that it reports:
 20240619-130912/v2.2.4@ee290818
 ```
 
+The patch intentionally does not change the original firmware version string.
+
 Also verify normal operation of:
 
 - Wi-Fi connectivity
@@ -208,44 +307,68 @@ Also verify normal operation of:
 - valve movement
 - device calibration
 
-The firmware modification should be evaluated separately over a longer period
-for stability and battery behavior.
+Runtime behavior and battery consumption must be evaluated separately.
+
+---
 
 ## Patcher usage
 
-### Basic usage
+The current patcher version is:
 
 ```text
-python patch_firmware.py ORIGINAL.gbl
+1.0-beta
 ```
 
-If all validation steps succeed, the patched firmware is written next to the
-original file.
-
-The default output filename is:
+The current patcher revision is:
 
 ```text
-SHTRV-01_2.2.4_patch.gbl
+2
+```
+
+### Basic usage
+
+```bash
+python3 patch_firmware_v.1.0.py
+```
+
+The patcher automatically reads:
+
+```text
+target/SHTRV-01_build_2.2.4.gbl
+```
+
+and writes:
+
+```text
+target/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
 ```
 
 An existing output file will not be overwritten.
 
 ### Verify the original firmware
 
-```text
-python patch_firmware.py ORIGINAL.gbl --verify
+```bash
+python3 patch_firmware_v.1.0.py --verify
 ```
 
-This validates the supplied firmware without patching or writing a new
+This validates the original firmware without patching or writing a new
 firmware file.
 
-The verification includes the expected file identity, GBL structure, CRC32,
-program layout and patch location.
+Verification includes:
+
+- expected file size
+- original firmware SHA-256
+- GBL structure
+- original CRC32
+- PROGRAM layout
+- original PROGRAM SHA-256
+- both original patch instructions
+- both original patch bytes
 
 ### Analyze the supported firmware
 
-```text
-python patch_firmware.py ORIGINAL.gbl --analyze
+```bash
+python3 patch_firmware_v.1.0.py --analyze
 ```
 
 Analysis mode is read-only.
@@ -257,24 +380,24 @@ patching work performed for this specific firmware, including:
 - GBL container information
 - GBL tag layout
 - CRC32 information
-- program block layout
+- PROGRAM block layout
 - flash and file offsets
-- program SHA-256 values
-- patch address mapping
+- PROGRAM SHA-256 values
+- patch address mappings
 - original and patched instruction bytes
-- hexadecimal context around the patch location
+- hexadecimal context around the patch locations
 - expected patch effects
 - expected patched hashes and CRC32
 
-The analyzer is intentionally tied to the firmware and patch investigated by
-this project.
+The analyzer is intentionally tied to the firmware and patches investigated
+by this project.
 
 It is **not** intended to be a general BIN, firmware or GBL analyzer.
 
 ### Dry run
 
-```text
-python patch_firmware.py ORIGINAL.gbl --dry-run
+```bash
+python3 patch_firmware_v.1.0.py --dry-run
 ```
 
 Dry-run mode performs the complete validation and patching process in memory
@@ -285,67 +408,82 @@ successfully before creating an output file.
 
 ### Show byte differences
 
-```text
-python patch_firmware.py ORIGINAL.gbl --dry-run --diff
+```bash
+python3 patch_firmware_v.1.0.py --dry-run --diff
 ```
 
-The `--diff` option displays the byte-level differences produced by the patch.
+The `--diff` option displays the byte-level differences produced by both
+patches.
 
-For the supported firmware, the expected result is:
+Expected PROGRAM differences:
 
 ```text
-Program data:
+0x0001E0F1  D0 -> E0
 0x0001E1C9  DC -> E0
-
-GBL file:
-0x0002471D  DC -> E0
 ```
 
-The rebuilt GBL also contains four changed CRC32 bytes.
-
-Therefore the final patched GBL differs from the original at exactly five byte
-positions:
+Expected complete GBL differences:
 
 ```text
+0x00024645  D0 -> E0
 0x0002471D  DC -> E0
-0x0010E1CC  58 -> 4F
-0x0010E1CD  AB -> 73
-0x0010E1CE  7B -> 2F
-0x0010E1CF  DC -> 43
+0x0010E1CC  58 -> 65
+0x0010E1CD  AB -> 82
+0x0010E1CE  7B -> EB
+0x0010E1CF  DC -> BA
 ```
 
-### Select an output file
+The first two changes are the intended program modifications.
 
-```text
-python patch_firmware.py ORIGINAL.gbl --output PATCHED.gbl
-```
+The final four bytes contain the rebuilt GBL CRC32.
 
-The output path can be specified explicitly.
+Exactly six bytes are therefore expected to differ between the original and
+final patched GBL.
 
-The patcher will refuse to overwrite an existing file.
+Any additional difference is treated as a validation failure.
 
 ### Show version
 
+```bash
+python3 patch_firmware_v.1.0.py --version
+```
+
+Expected current version information:
+
 ```text
-python patch_firmware.py --version
+patch_firmware_v.1.0.py 1.0-beta revision 2
 ```
 
 ### Show command-line help
 
-```text
-python patch_firmware.py --help
+```bash
+python3 patch_firmware_v.1.0.py --help
 ```
+
+---
 
 ## OTA server
 
 The included `ota_server.py` provides a small local HTTP server specifically
-for transferring the patched firmware to a Shelly TRV.
+for transferring the generated patched firmware to a Shelly TRV.
 
 It does not patch firmware and it does not automatically initiate an OTA
 update on a device.
 
-Before the server starts, it validates that the supplied file is exactly the
-expected patched firmware.
+The current OTA-server version is:
+
+```text
+1.0
+```
+
+Before the server starts, it automatically loads:
+
+```text
+target/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
+```
+
+and validates that the file is exactly the expected combined patched
+firmware.
 
 Validation includes:
 
@@ -370,14 +508,22 @@ Range: bytes=<start>-
 Range: bytes=-<length>
 ```
 
-A valid Range request is answered with HTTP `206 Partial Content`.
+A valid Range request is answered with:
 
-A request without a Range header is answered with HTTP `200 OK`.
+```text
+206 Partial Content
+```
+
+A request without a Range header is answered with:
+
+```text
+200 OK
+```
 
 Invalid or unsupported ranges are rejected.
 
-The successful physical-device OTA tests included a Shelly TRV requesting the
-firmware from this local server.
+The server has been tested with both complete HTTP transfers and HTTP Range
+requests.
 
 ### Transfer progress
 
@@ -404,9 +550,13 @@ More detailed OTA-server documentation is maintained in:
 docs/ota-server.md
 ```
 
-## Patch
+---
 
-The modification changes one byte in the main program data.
+## Firmware modifications
+
+The combined firmware contains two independent program modifications.
+
+### Patch A — beacon-skip recovery bypass
 
 Original instruction:
 
@@ -424,7 +574,7 @@ PROGRAM offset 0x0001E1C8
 31 E0    b 0x0001E22E
 ```
 
-The actual modified byte is:
+Modified byte:
 
 ```text
 PROGRAM offset : 0x0001E1C9
@@ -432,7 +582,7 @@ Original       : DC
 Patched        : E0
 ```
 
-Within the original GBL file this byte is located at:
+Within the complete GBL file:
 
 ```text
 GBL file offset: 0x0002471D
@@ -442,8 +592,50 @@ The modification forces execution to branch to the existing continuation path,
 bypassing the additional recovery block associated with the observed
 beacon-skip recovery behavior.
 
+The normal RSSI-dependent beacon-skip selection remains in place.
+
+### Patch B — periodic mDNS restart bypass
+
+Original instruction:
+
+```text
+PROGRAM offset 0x0001E0F0
+
+02 D0    beq 0x0001E0F8
+```
+
+Patched instruction:
+
+```text
+PROGRAM offset 0x0001E0F0
+
+02 E0    b 0x0001E0F8
+```
+
+Modified byte:
+
+```text
+PROGRAM offset : 0x0001E0F1
+Original       : D0
+Patched        : E0
+```
+
+Within the complete GBL file:
+
+```text
+GBL file offset: 0x00024645
+```
+
+This modification bypasses the recurring connected-state call to the existing
+mDNS restart routine.
+
+The normal mDNS responder implementation and other event-driven callers are
+not intentionally removed.
+
 Detailed reverse-engineering information is maintained in the separate
-research repository and in `docs/technical-details.md`.
+research repository.
+
+---
 
 ## Reproducibility
 
@@ -453,38 +645,47 @@ The supported original firmware has the following SHA-256:
 5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
 ```
 
-The original main program block has the SHA-256:
+The original main PROGRAM block has the SHA-256:
 
 ```text
 4dc770fe535008ef150f3a144354169199e1a0e235173abcc3f7387b95ee9b5c
 ```
 
-After applying the one-byte modification, the expected main program SHA-256 is:
+After applying both modifications, the expected main PROGRAM SHA-256 is:
 
 ```text
-d69fc6157e50b3d72b4c800c0008e7f1d7e7e4d9799cee2b0f4b2269b68fc7d4
+06742a2632a3d45cf697b8be85045914d004f30644dad17b3d0d20012c87c61b
 ```
 
-The rebuilt GBL has the expected CRC32:
+The rebuilt combined-patch GBL has the expected CRC32:
 
 ```text
-0x432F734F
+0xBAEB8265
 ```
 
-The expected SHA-256 of the final patched GBL is:
+The expected SHA-256 of the final combined patched GBL is:
 
 ```text
-ac7d85c8e9239bebd3b134c4b93fc838859c613e59f7690650097da984ea7222
+7adbb31d6b7faa8b9290d7b3436af45d42af9c3602a7195cafab774ded84ac61
+```
+
+The expected output size remains:
+
+```text
+1,106,384 bytes
 ```
 
 These values allow the patching process to be reproduced and independently
 verified.
 
+---
+
 ## Safety
 
 The patcher is designed to fail closed.
 
-If any validation step fails, no new patched firmware image should be produced.
+If any validation step fails, no new patched firmware image should be
+produced.
 
 Checks include:
 
@@ -492,10 +693,11 @@ Checks include:
 - original firmware size
 - expected GBL structure
 - original GBL CRC32
-- program block addresses and sizes
-- original program SHA-256
-- original patch instruction and patch byte
-- patched program SHA-256
+- PROGRAM block addresses and sizes
+- original PROGRAM SHA-256
+- both original patch instructions
+- both original patch bytes
+- patched PROGRAM SHA-256
 - rebuilt GBL structure
 - rebuilt GBL CRC32
 - expected byte differences
@@ -513,43 +715,87 @@ Firmware modification and OTA installation always involve risk. Do not
 disconnect power or intentionally interrupt the device while an update is in
 progress.
 
+---
+
 ## Project status
 
-The firmware modification has successfully booted and operated on multiple
-physical Shelly TRV devices.
+The combined patch has successfully passed the deterministic binary-generation
+and validation stages.
 
-Testing performed so far includes:
+The current combined-patch testing has demonstrated:
 
-- generation of the patched 2.2.4 GBL from the known original firmware
-- successful installation of the patched firmware on physical hardware
-- successful boot of patched firmware 2.2.4
-- successful OTA transfer using the included local OTA server
-- an upgrade test from original firmware 2.1.3 to patched firmware 2.2.4
-- normal Wi-Fi operation after installation
-- normal cloud operation after installation
-- successful thermostat calibration
-- successful thermostat valve movement
-- normal RSSI-dependent beacon-skip selection
-- operation without recurrence of the targeted recovery sequence during the
-  observed test periods
+```text
+Original firmware validation:        confirmed
+Combined patch generation:           confirmed
+Deterministic patched output:        confirmed
+Patched PROGRAM SHA-256:              confirmed
+Patched GBL CRC32:                    confirmed
+Patched GBL SHA-256:                  confirmed
+OTA-server firmware validation:       confirmed
+HTTP 200 transfer:                    confirmed
+HTTP 206 Range transfer:              confirmed
+Physical firmware installation:      confirmed
+Patched firmware boot:                confirmed
+Periodic mDNS suppression:            observed in runtime capture
+Beacon-recovery suppression:          longer runtime validation in progress
+Long-term stability:                  still under evaluation
+Battery-life improvement:             not established
+```
 
-The targeted sequence is:
+The combined patched firmware has been installed on a physical Shelly TRV that
+previously ran firmware 2.1.3.
+
+After installation, the device successfully booted firmware 2.2.4.
+
+A packet capture performed with the combined patch did not observe the
+previously identified periodic mDNS activity during the monitored test window.
+
+This provides runtime evidence that Patch B is active in the combined firmware
+under the tested conditions.
+
+Longer runtime observation of the beacon-skip recovery behavior is still in
+progress.
+
+### Separate Patch B runtime test
+
+Patch B was also tested independently on another physical Shelly TRV.
+
+During the monitored packet-capture window, the recurring periodic mDNS
+activity was not observed.
+
+The device nevertheless continued to produce the recurring sequence:
 
 ```text
 Beacon skip error! Attempt recovery
 Enter powersave state 1
-Enter powersave state 3 (skip N)
+Enter powersave state 3 (skip 20)
 ```
 
-Long-term stability and battery-consumption testing are still in progress.
+approximately once per minute under the observed conditions.
 
-These tests do **not yet prove an improvement in battery life**.
+This provides useful runtime separation between the periodic mDNS restart path
+and the beacon-skip recovery path under the tested conditions.
+
+It does not establish that the two mechanisms can never interact under other
+conditions.
+
+### Battery testing
+
+Long-term battery-consumption testing is still in progress.
+
+The current runtime tests do **not** prove an improvement in battery life.
+
+The two patched behaviors represent recurring firmware activity identified
+during the investigation, but their quantitative contribution to battery
+consumption has not yet been established.
+
+---
 
 ## Research
 
 The reverse-engineering work, firmware comparison, ARM/Thumb analysis,
-runtime testing and technical reasoning behind this patch are documented
-separately in the research repository:
+runtime testing and technical reasoning behind these modifications are
+documented separately in the research repository:
 
 **Shelly-TRV-Gen1-2.2.4-beacon-skip-fix**
 
@@ -560,28 +806,36 @@ evidence.
 
 This repository contains the local patching and OTA-serving implementation.
 
+---
+
 ## Testing
 
 Testing performed during development includes:
 
 - validation of the known original firmware
-- rejection of a deliberately modified input file
+- rejection of deliberately modified input firmware
 - read-only verification mode
 - read-only analysis mode
 - complete in-memory dry run
+- verification of both program modifications
 - byte-difference verification
-- output-file creation
+- deterministic output-file creation
 - existing-output protection
 - command-line option conflict handling
-- verification of the expected patched CRC32
-- verification of the expected patched SHA-256
-- installation and boot testing on physical Shelly TRV hardware
+- verification of the expected patched PROGRAM SHA-256
+- verification of the expected patched GBL CRC32
+- verification of the expected patched GBL SHA-256
+- automatic `target` directory workflow
+- OTA-server validation of the generated firmware
 - local HTTP firmware serving
-- HTTP Range request handling
+- HTTP 200 full-file transfer
+- HTTP 206 Range request handling
 - firmware-transfer progress reporting
-- OTA installation on a second physical Shelly TRV
-- post-update Wi-Fi and cloud verification
-- post-update thermostat calibration and valve-operation verification
+- OTA installation on physical Shelly TRV hardware
+- post-update boot verification
+- runtime packet capture
+- independent Patch B runtime testing
+- combined Patch A+B runtime testing
 
 Additional test information is documented in:
 
@@ -590,6 +844,40 @@ tests/README.md
 ```
 
 No proprietary firmware test images are stored in this repository.
+
+---
+
+## Local firmware files and `target`
+
+The `target` directory is intentionally included in the repository so that a
+fresh clone already contains the directory expected by the patcher and OTA
+server.
+
+Firmware files inside `target` must remain local and must not be committed.
+
+A typical `.gitignore` configuration is:
+
+```gitignore
+target/*
+!target/.gitkeep
+```
+
+The repository therefore contains:
+
+```text
+target/.gitkeep
+```
+
+but not:
+
+```text
+target/SHTRV-01_build_2.2.4.gbl
+target/SHTRV-01_2.2.4_beacon_mdns_patch.gbl
+```
+
+This applies to both original and modified Shelly firmware.
+
+---
 
 ## Disclaimer
 
@@ -612,6 +900,8 @@ Internet.
 
 This project does not grant any rights to third-party firmware, trademarks,
 or other intellectual property.
+
+---
 
 ## License
 

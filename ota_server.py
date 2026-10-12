@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Local OTA server for the Shelly TRV Gen1 2.2.4 beacon-skip patch.
+Local OTA server for the Shelly TRV Gen1 2.2.4 beacon-skip + mDNS patch.
 
 This server does not patch firmware and does not flash a device automatically.
 
@@ -29,17 +29,19 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-VERSION = "0.1.0"
+VERSION = "1.0"
+REVISION = "2"
 
 EXPECTED_PATCHED_GBL_SIZE = 1_106_384
 
 EXPECTED_PATCHED_GBL_SHA256 = (
-    "ac7d85c8e9239bebd3b134c4b93fc838859c613e59f7690650097da984ea7222"
+    "7adbb31d6b7faa8b9290d7b3436af45d42af9c3602a7195cafab774ded84ac61"
 )
 
-EXPECTED_PATCHED_GBL_CRC32 = 0x432F734F
+EXPECTED_PATCHED_GBL_CRC32 = 0xBAEB8265
 
-DEFAULT_FIRMWARE_NAME = "SHTRV-01_2.2.4_patch.gbl"
+DEFAULT_FIRMWARE_NAME = "SHTRV-01_2.2.4_beacon_mdns_patch.gbl"
+TARGET_DIRECTORY_NAME = "target"
 
 PREFERRED_PORTS = (80, 8000)
 
@@ -308,7 +310,6 @@ def parse_range_header(
     # Suffix range:
     #
     # Range: bytes=-500
-
     if not start_text:
         try:
             suffix_length = int(end_text)
@@ -366,7 +367,6 @@ def parse_range_header(
         # successful Shelly TRV OTA test:
         #
         # Range: bytes=0-
-
         end = file_size - 1
 
     return start, end
@@ -501,7 +501,7 @@ class FirmwareRequestHandler(
     firmware_path: Path
     firmware_url_path: str
 
-    server_version = "ShellyTRVOTA/0.1"
+    server_version = "ShellyTRVOTA/1.0"
     sys_version = ""
 
     def log_message(
@@ -966,18 +966,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "firmware",
-        type=Path,
-        help=(
-            "Patched GBL file produced by "
-            "patch_firmware.py"
-        ),
-    )
-
-    parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {VERSION}",
+        version=f"%(prog)s {VERSION} revision {REVISION}",
     )
 
     return parser
@@ -993,13 +984,15 @@ def print_header() -> None:
 
 def main() -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    parser.parse_args()
+
+    script_directory = Path(__file__).resolve().parent
 
     firmware_path = (
-        args.firmware
-        .expanduser()
-        .resolve()
-    )
+        script_directory
+        / TARGET_DIRECTORY_NAME
+        / DEFAULT_FIRMWARE_NAME
+    ).resolve()
 
     print_header()
 

@@ -12,6 +12,11 @@
 *_patch.gbl
 *_patched.gbl
 
+# Target directory
+# Keep the directory in Git, but never commit firmware files.
+target/*
+!target/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]
