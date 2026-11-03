@@ -1,1594 +1,1413 @@
 # Technical Details
 
-This document describes the technical implementation of the two firmware
-modifications applied by this project and the validation performed by:
+This document describes the current technical implementation of the Shelly TRV Gen1 2.2.4 B2.2 firmware reconstruction performed by:
 
 ```text
-patch_firmware_v.1.0.py
+patch_firmware_v2.0.py
 ```
 
-The current patcher applies two independent modifications to the supported
-Shelly TRV 2.2.4 firmware:
+The current patcher is fundamentally different from the historical v1.0 patcher.
 
-- **Patch A:** bypass of the recurring beacon-skip recovery path
-- **Patch B:** bypass of the periodic connected-state mDNS responder restart
+The historical implementation applied two small experimental control-flow modifications directly to Stock 2.2.4.
 
-Both modifications are applied to the same main PROGRAM block.
+The current v2.0 patcher instead performs a deterministic reconstruction:
 
-Detailed reverse-engineering research, firmware comparisons, runtime logs,
-packet captures and the investigation that led to these modifications are
-maintained in the separate research repository.
+```text
+exact supported Stock 2.2.4
+        |
+        v
+qualified B2.2 application
+        |
+        v
+qualified B2.2 GBL
+```
 
-This document intentionally describes only the firmware build and exact patch
-implemented by this project.
+The objective is not to produce a functionally similar firmware.
 
-It is not intended as general documentation for other Shelly firmware versions
-or as a general description of the GBL format.
+The objective is to reproduce the exact qualified B2.2 artifacts byte-for-byte.
 
 ---
 
-## Supported firmware
+# Scope
+
+B2.2 is the current observer-free integrated experimental firmware containing exactly nine selected qualified corrections:
+
+```text
+1. A1R including the A1 lifecycle correction
+2. C-C Beacon-Recovery evidence correction
+3. B2 bounded serialization
+4. minimal MQTT PUBLISH guard
+5. official Silicon Labs WF200 3.18.0
+6. Calibration Restore Guard
+7. P01 ownership-aware Battery-PA3 release
+8. P02 bounded synchronous I2C timeout retirement
+9. P03 WLAN-GPIO notification interrupt-mask correction
+```
+
+There is no implicit tenth correction.
+
+B2.2 means:
+
+```text
+All Known Qualified Fixes
+```
+
+within the selected qualification scope.
+
+It does **not** mean:
+
+```text
+all suspicious code paths ever identified
+```
+
+and it does not mean that the historical battery-drain root cause has been conclusively established.
+
+---
+
+# Not included in B2.2
+
+The following experimental, diagnostic, deferred, or unqualified changes are not part of B2.2:
+
+```text
+periodic mDNS bypass
+MIN80
+D3 observer
+PM52/cmd66 observer
+additional diagnostic counters
+additional diagnostic logging
+FastPS experiments
+P04
+P05
+P06
+P07
+P08
+P10
+P11
+P12
+P13
+valve_min_percent correction
+raw-ADC publication correction
+raw TXDMA candidates
+EM3 experiments
+```
+
+In particular, the historical periodic mDNS patch from `patch_firmware_v.1.0.py` is **not** part of B2.2.
+
+Historical experiments using that patch remain valid as historical evidence but must not be described as part of the current B2.2 firmware.
+
+---
+
+# Supported firmware
 
 Device:
 
 ```text
-Shelly TRV (SHTRV-01)
+Shelly TRV Gen1
+SHTRV-01
 ```
 
-Firmware:
+Supported Stock firmware:
 
 ```text
-Version: 2.2.4
-Build:   20240619-130912/v2.2.4@ee290818
+Version:
+2.2.4
+
+Build:
+20240619-130912/v2.2.4@ee290818
 ```
 
-Original GBL size:
+Supported Stock GBL:
 
 ```text
+Filename:
+SHTRV-01_build_2.2.4.gbl
+
+Size:
 1,106,384 bytes
-```
 
-Original GBL SHA-256:
-
-```text
+SHA256:
 5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
 ```
 
-Original GBL CRC32:
+The patcher accepts only the specifically qualified Stock 2.2.4 input.
 
-```text
-0xDC7BAB58
-```
+It does not search unknown firmware versions for similar instruction sequences and does not attempt heuristic relocation of the B2.2 correction set.
 
-Original main PROGRAM SHA-256:
-
-```text
-4dc770fe535008ef150f3a144354169199e1a0e235173abcc3f7387b95ee9b5c
-```
-
-Only this specifically analyzed firmware image is accepted by the patcher.
-
-The patcher does not attempt to locate equivalent instructions in unknown
-firmware versions.
+Unexpected input fails closed.
 
 ---
 
-# Patch A — Beacon-skip recovery bypass
+# Qualified B2.2 identities
 
-## Observed behavior
-
-Firmware 2.2.4 was observed repeatedly producing the runtime sequence:
+## Application
 
 ```text
-Beacon skip error! Attempt recovery
-Enter powersave state 1
-Enter powersave state 3 (skip N)
+Filename:
+SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
+
+Size:
+1,069,320 bytes
+
+SHA256:
+7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
+
+CRC32:
+42657D97
 ```
 
-Under affected conditions this sequence could recur approximately once per
-minute.
-
-Reverse engineering showed that this recovery behavior is separate from the
-normal RSSI-dependent beacon-skip selection mechanism.
-
-Patch A bypasses the additional recovery block while leaving the normal
-RSSI-dependent beacon-skip selection code intact.
-
----
-
-## Normal beacon-skip selection
-
-Analysis of the supported firmware showed the following desired beacon-skip
-selection:
+## GBL
 
 ```text
-RSSI >= -69 dBm        -> beacon skip 20
-RSSI -79 .. -70 dBm    -> beacon skip 15
-RSSI < -79 dBm         -> beacon skip 10
+Filename:
+SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
+
+Size:
+1,126,156 bytes
+
+SHA256:
+912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
+
+END CRC32:
+52A97051
+
+Whole-file CRC32 residue:
+2144DF1C
 ```
 
-Equivalent threshold behavior was also found in older firmware examined during
-the investigation.
+These identities define the current qualified B2.2 build.
 
-Patch A does not modify:
-
-- these RSSI thresholds,
-- the desired beacon-skip calculation,
-- normal entry into powersave state 3,
-- the configured skip value selected from RSSI.
-
-The patch targets only the additional recovery path.
+A different final application hash or GBL hash is a different firmware candidate and must not be silently treated as B2.2.
 
 ---
 
-## Beacon statistics and recovery condition
+# Native Shelly firmware identity
 
-Further reverse engineering established that firmware 2.2.4 obtains beacon
-statistics from the WLAN subsystem using command:
-
-```text
-0x66
-```
-
-The returned data includes values corresponding to:
-
-```text
-beacon_rx_count
-missed
-tbtt_diff
-```
-
-The firmware derives the value used by the recovery logic from the change in
-the cumulative beacon receive counter.
-
-The relevant calculation is equivalent to:
-
-```text
-600 / (current_beacon_rx_count - previous_beacon_rx_count)
-```
-
-The result is truncated to its low byte and is subsequently read as a signed
-8-bit value by the recovery-condition code.
-
-This detail is important because the recovery condition is therefore not
-simply a direct test of the desired RSSI-based beacon-skip setting.
-
-The value involved in the recovery path and the configured desired
-beacon-skip value are separate quantities.
-
----
-
-## Recovery-path condition
-
-The relevant firmware sequence contains:
-
-```asm
-0001E1B6  21 4B        ldr      r3,[...]
-0001E1B8  93 F9 00 30  ldrsb.w  r3,[r3,#0]
-0001E1BC  00 2B        cmp      r3,#0
-0001E1BE  36 D0        beq      0x0001E22E
-
-0001E1C0  1E 4B        ldr      r3,[...]
-0001E1C2  93 F9 00 30  ldrsb.w  r3,[r3,#0]
-0001E1C6  02 2B        cmp      r3,#2
-0001E1C8  31 DC        bgt      0x0001E22E
-```
-
-The additional recovery block follows this conditional branch.
-
-Because the value is loaded with a signed-byte load, the relevant control flow
-is effectively:
-
-```text
-value == 0   -> continue without recovery
-value <= 2   -> recovery path, except zero
-value > 2    -> continue without recovery
-```
-
-This includes negative signed-byte values.
-
-The binary-analysis result therefore establishes that the recovery predicate
-is effectively:
-
-```text
-value != 0 && value <= 2
-```
-
-for the signed value used at this point in the firmware.
-
----
-
-## Beacon recovery behavior
-
-When the recovery path is entered, the firmware requests:
-
-```text
-powersave state 1
-```
-
-Analysis of the WLAN power-management path indicates that this state
-corresponds to an active/always-on WLAN power-management mode.
-
-During the observed recovery sequence, the firmware remains in this state for
-approximately five seconds.
-
-It then restores the previously selected or deferred power state, normally:
-
-```text
-powersave state 3 (skip N)
-```
-
-with the current desired RSSI-dependent beacon-skip value.
-
-The recovery path therefore temporarily changes WLAN power-management behavior.
-
-No explicit transmit-power increase was identified in the analyzed recovery
-path.
-
-The recovery sequence also does not inherently imply a full Wi-Fi scan,
-reconnect, DHCP exchange or cloud reconnect.
-
-The energy impact of the repeated state-1 interval is plausible but has not
-been quantitatively measured by this project.
-
----
-
-## Patch A instruction
-
-Relevant instruction offset in PROGRAM #1:
-
-```text
-0x0001E1C8
-```
-
-Original instruction:
-
-```asm
-31 DC    bgt 0x0001E22E
-```
-
-Patched instruction:
-
-```asm
-31 E0    b 0x0001E22E
-```
-
-The original conditional branch is replaced with an unconditional branch to
-the same existing destination.
-
-Execution therefore always continues at:
-
-```text
-0x0001E22E
-```
-
-instead of being able to fall through into the additional recovery block.
-
-The destination code itself is not modified.
-
----
-
-## Patch A byte modification
-
-The Thumb instruction is two bytes long:
-
-```text
-Original: 31 DC
-Patched : 31 E0
-```
-
-Only the second byte changes.
-
-PROGRAM #1 offset:
-
-```text
-0x0001E1C9
-```
-
-Modification:
-
-```text
-DC -> E0
-```
-
-Corresponding GBL file offset:
-
-```text
-0x0002471D
-```
-
----
-
-## Patch A context
-
-Original bytes around the instruction:
-
-```text
-0x0001E1B8:
-93 F9 00 30 00 2B 36 D0 1E 4B 93 F9 00 30 02 2B
-
-0x0001E1C8:
-31 DC 07 F1 14 03 18 46 54 F0 BC FB F8 62 EC F7
-```
-
-After Patch A:
-
-```text
-0x0001E1C8:
-31 E0 07 F1 14 03 ...
-```
-
----
-
-# Patch B — Periodic mDNS restart bypass
-
-## Observed behavior
-
-Firmware comparison and runtime packet capture identified recurring mDNS
-activity that differs between firmware versions.
-
-Observed runtime behavior included approximately:
-
-```text
-Firmware 2.1.0   -> no recurring mDNS traffic observed during the capture
-Firmware 2.1.3   -> recurring mDNS activity approximately every 60 seconds
-Firmware 2.2.4   -> recurring mDNS activity approximately every 180 seconds
-```
-
-These values describe the documented finite packet-capture windows.
-
-Absence of packets from firmware 2.1.0 during that finite observation period
-does not prove that the firmware can never emit mDNS traffic.
-
-Static analysis of firmware 2.2.4 identified the recurring connected-state
-call responsible for the approximately 180-second activity.
-
----
-
-## Periodic scheduling path
-
-The relevant firmware logic is serviced by the firmware's minute-based
-maintenance path.
-
-A firmware-seconds dispatcher invokes the minute routine when the relevant
-time value reaches a minute boundary.
-
-The minute routine increments an internal counter.
-
-Firmware 2.2.4 then performs a modulo-three test on this counter.
-
-The resulting behavior is approximately:
-
-```text
-minute 1 -> no periodic mDNS restart
-minute 2 -> no periodic mDNS restart
-minute 3 -> connected-state mDNS restart
-```
-
-and then repeats.
-
-The observed approximately 180-second interval is therefore not implemented as
-a dedicated independent 180-second timer.
-
-It results from an every-third-invocation condition inside the minute
-maintenance path.
-
-Depending on scheduling and missed boundaries, observed packet timing does not
-need to be exactly 180.000 seconds.
-
----
-
-## mDNS restart function
-
-Reverse engineering identified the relevant restart-equivalent function at:
-
-```text
-0x0003D6C8
-```
-
-Its behavior is consistent with restarting the mDNS responder state.
-
-The function:
-
-- resets responder probe state,
-- returns the responder to probing,
-- schedules the probing callback,
-- eventually results in normal mDNS probe and announcement traffic.
-
-The probing sequence uses the existing mDNS implementation and UDP port:
-
-```text
-5353
-```
-
-The function itself is not removed or modified by Patch B.
-
----
-
-## Other mDNS restart callers
-
-The mDNS restart-equivalent function has multiple callers.
-
-The periodic connected-state caller targeted by Patch B is only one of them.
-
-Other analyzed call sites include paths associated with:
-
-- button-release behavior,
-- network-interface addition,
-- service addition,
-- successful connection establishment.
-
-Patch B does not modify those callers.
-
-This distinction is important:
-
-> Patch B does not disable mDNS.
-
-It bypasses only the recurring connected-state restart call identified in the
-periodic maintenance path.
-
-Normal initialization and event-driven mDNS functionality remain outside the
-modified call site.
-
----
-
-## Patch B control flow
-
-The relevant periodic code contains a conditional branch at:
-
-```text
-0x0001E0F0
-```
-
-Original instruction:
-
-```text
-02 D0
-```
-
-This is a conditional branch to:
-
-```text
-0x0001E0F8
-```
-
-When the original condition does not branch, execution continues through the
-periodic mDNS restart call.
-
-The restart call itself occurs at:
-
-```text
-0x0001E0F4
-```
-
-and calls:
-
-```text
-0x0003D6C8
-```
-
-The continuation begins at:
-
-```text
-0x0001E0F8
-```
-
-Patch B replaces the conditional branch with an unconditional branch to the
-same continuation.
-
----
-
-## Patch B instruction
-
-Relevant instruction offset in PROGRAM #1:
-
-```text
-0x0001E0F0
-```
-
-Original:
-
-```text
-02 D0
-```
-
-Patched:
-
-```text
-02 E0
-```
-
-The instruction therefore changes from a conditional branch to an
-unconditional branch.
-
-The target remains:
-
-```text
-0x0001E0F8
-```
-
-The result is that execution always skips the periodic restart call at:
-
-```text
-0x0001E0F4
-```
-
----
-
-## Patch B byte modification
-
-The instruction is two bytes long:
-
-```text
-Original: 02 D0
-Patched : 02 E0
-```
-
-Only the second byte changes.
-
-PROGRAM #1 offset:
-
-```text
-0x0001E0F1
-```
-
-Modification:
-
-```text
-D0 -> E0
-```
-
-Corresponding GBL file offset:
-
-```text
-0x00024645
-```
-
----
-
-## Patch B context
-
-Original instruction window:
-
-```text
-02 D0 29 48 1F F0 E8 FA 12 4B
-```
-
-Patched instruction window:
-
-```text
-02 E0 29 48 1F F0 E8 FA 12 4B
-```
-
-The bypassed call begins at:
-
-```text
-0x0001E0F4
-```
-
-with bytes:
-
-```text
-1F F0 E8 FA
-```
-
-The continuation at:
-
-```text
-0x0001E0F8
-```
-
-begins with:
-
-```text
-12 4B
-```
-
-The call instruction itself is deliberately left unchanged.
-
-Only the preceding control-flow branch is modified.
-
----
-
-# Relationship between Patch A and Patch B
-
-Patch A and Patch B affect two different firmware paths.
-
-Patch A targets:
-
-```text
-beacon statistics
-        |
-        v
-derived recovery value
-        |
-        v
-recovery predicate
-        |
-        v
-temporary powersave state 1
-```
-
-Patch B targets:
-
-```text
-minute maintenance
-        |
-        v
-modulo-three condition
-        |
-        v
-periodic mDNS responder restart
-        |
-        v
-mDNS probes / announcement
-```
-
-The two patches are located close to each other in the main PROGRAM image, but
-their targeted runtime behaviors are distinct.
-
-Runtime testing provides additional evidence for this separation.
-
-A physical device running **Patch B only** showed:
-
-```text
-periodic mDNS traffic:    not observed in the monitored capture
-beacon recovery sequence: still observed repeatedly
-```
-
-The beacon recovery continued approximately once per minute even though the
-targeted periodic mDNS activity was no longer observed.
-
-This occurred even with relatively strong Wi-Fi signal conditions around:
-
-```text
--58 to -59 dBm
-```
-
-and normal desired beacon skip:
-
-```text
-20
-```
-
-Under the tested conditions, the periodic mDNS restart was therefore not
-required for the observed beacon-recovery behavior.
-
-This does not prove that the two mechanisms can never interact indirectly
-under any possible runtime condition.
-
----
-
-# GBL container
-
-The supported original firmware is stored in a GBL container.
-
-For this specific image, the parsed container contains six tags:
-
-```text
-#1  HEADER
-    ID             : 0x03A617EB
-    Tag offset     : 0x00000000
-    Payload length : 8 bytes
-
-#2  APPLICATION_INFO
-    ID             : 0xF40A0AF4
-    Tag offset     : 0x00000010
-    Payload length : 28 bytes
-
-#3  BOOTLOADER
-    ID             : 0xF50909F5
-    Tag offset     : 0x00000034
-    Payload length : 25,868 bytes
-
-#4  PROGRAM
-    ID             : 0xFD0303FD
-    Tag offset     : 0x00006548
-    Payload length : 1,049,552 bytes
-
-#5  PROGRAM
-    ID             : 0xFD0303FD
-    Tag offset     : 0x00106920
-    Payload length : 30,876 bytes
-
-#6  END
-    ID             : 0xFC0404FC
-    Tag offset     : 0x0010E1C4
-    Payload length : 4 bytes
-```
-
-The patcher validates this exact expected structure before modifying the
-firmware.
-
----
-
-# PROGRAM blocks
-
-The supported GBL contains two PROGRAM tags.
-
-Each PROGRAM payload contains a four-byte flash address followed by the program
-data.
-
-## PROGRAM #1
-
-Flash start:
-
-```text
-0x00000000
-```
-
-Flash end:
-
-```text
-0x001003CB
-```
-
-Program data size:
-
-```text
-1,049,548 bytes
-```
-
-GBL program-data range:
-
-```text
-0x00006554 - 0x0010691F
-```
-
-Original PROGRAM #1 SHA-256:
-
-```text
-4dc770fe535008ef150f3a144354169199e1a0e235173abcc3f7387b95ee9b5c
-```
-
-Both Patch A and Patch B are located in PROGRAM #1.
-
----
-
-## PROGRAM #2
-
-Flash start:
-
-```text
-0x00130A98
-```
-
-Flash end:
-
-```text
-0x0013832F
-```
-
-Program data size:
-
-```text
-30,872 bytes
-```
-
-GBL program-data range:
-
-```text
-0x0010692C - 0x0010E1C3
-```
-
-PROGRAM #2 SHA-256:
-
-```text
-662bd549f050ab81a120d3daa07646652c38880b9d2bfa988ff6bee7f731e33e
-```
-
-PROGRAM #2 is not modified.
-
-The patcher verifies that it remains unchanged when rebuilding the GBL.
-
----
-
-# Address mapping
-
-PROGRAM #1 begins at flash address:
-
-```text
-0x00000000
-```
-
-and its actual program data begins at GBL file offset:
-
-```text
-0x00006554
-```
-
-Because PROGRAM #1 is mapped to flash address zero, its PROGRAM offsets and
-flash addresses are numerically identical.
-
----
-
-## Patch B address mapping
-
-PROGRAM offset:
-
-```text
-0x0001E0F1
-```
-
-Flash address:
-
-```text
-0x0001E0F1
-```
-
-GBL calculation:
-
-```text
-0x00006554 + 0x0001E0F1 = 0x00024645
-```
-
-Complete mapping:
-
-```text
-PROGRAM offset : 0x0001E0F1
-Flash address  : 0x0001E0F1
-GBL file offset: 0x00024645
-```
-
-Modification:
-
-```text
-D0 -> E0
-```
-
----
-
-## Patch A address mapping
-
-PROGRAM offset:
-
-```text
-0x0001E1C9
-```
-
-Flash address:
-
-```text
-0x0001E1C9
-```
-
-GBL calculation:
-
-```text
-0x00006554 + 0x0001E1C9 = 0x0002471D
-```
-
-Complete mapping:
-
-```text
-PROGRAM offset : 0x0001E1C9
-Flash address  : 0x0001E1C9
-GBL file offset: 0x0002471D
-```
-
-Modification:
-
-```text
-DC -> E0
-```
-
----
-
-# GBL handling
-
-The patcher does not construct a firmware image from scratch.
-
-It:
-
-1. locates the fixed original firmware in `target/`,
-2. reads the original GBL,
-3. validates the complete original file identity,
-4. parses the expected GBL tag structure,
-5. validates the original GBL CRC32,
-6. identifies the expected PROGRAM blocks,
-7. validates PROGRAM #1,
-8. validates both original patch instructions,
-9. validates both original patch bytes,
-10. applies Patch B in memory,
-11. applies Patch A in memory,
-12. validates both resulting instructions,
-13. validates the resulting PROGRAM #1 SHA-256,
-14. verifies that PROGRAM #2 remains unchanged,
-15. reinserts the modified PROGRAM #1 data into a copy of the original GBL,
-16. recalculates the GBL CRC32,
-17. validates the rebuilt GBL,
-18. verifies the exact expected original-to-patched byte differences,
-19. verifies the final GBL SHA-256,
-20. writes the result only after validation succeeds,
-21. reads the written output back and verifies it again.
-
-Unrelated firmware data is expected to remain unchanged.
-
----
-
-# CRC32
-
-The original GBL contains the stored CRC32:
-
-```text
-0xDC7BAB58
-```
-
-For this firmware, CRC32 is calculated over the GBL data from:
-
-```text
-0x00000000
-```
-
-through:
-
-```text
-0x0010E1CB
-```
-
-inclusive.
-
-The four stored CRC bytes occupy:
-
-```text
-0x0010E1CC - 0x0010E1CF
-```
-
-The CRC32 calculated over the original file matches the stored value:
-
-```text
-Calculated: 0xDC7BAB58
-Stored    : 0xDC7BAB58
-```
-
-After applying both program modifications, the expected CRC32 is:
-
-```text
-0xBAEB8265
-```
-
-Stored little-endian, the resulting four bytes are:
-
-```text
-65 82 EB BA
-```
-
----
-
-# Expected byte differences
-
-The combined patch intentionally changes exactly two bytes in PROGRAM #1.
-
-Patch B:
-
-```text
-GBL offset 0x00024645
-
-D0 -> E0
-```
-
-Patch A:
-
-```text
-GBL offset 0x0002471D
-
-DC -> E0
-```
-
-These two changes produce a new GBL CRC32, so the four stored CRC bytes also
-change.
-
-The complete expected original-to-patched GBL difference is therefore:
-
-```text
-Offset       Original   Patched
------------  --------   -------
-0x00024645     D0         E0
-0x0002471D     DC         E0
-0x0010E1CC     58         65
-0x0010E1CD     AB         82
-0x0010E1CE     7B         EB
-0x0010E1CF     DC         BA
-```
-
-Exactly:
-
-```text
-6 bytes
-```
-
-in the complete GBL file are expected to differ.
-
-Two are intentional PROGRAM modifications.
-
-Four contain the updated CRC32.
-
-Any other difference causes validation to fail.
-
----
-
-# Patched PROGRAM verification
-
-Original PROGRAM #1 SHA-256:
-
-```text
-4dc770fe535008ef150f3a144354169199e1a0e235173abcc3f7387b95ee9b5c
-```
-
-Expected combined patched PROGRAM #1 SHA-256:
-
-```text
-06742a2632a3d45cf697b8be85045914d004f30644dad17b3d0d20012c87c61b
-```
-
-The patcher verifies this value after applying both byte modifications.
-
-This establishes that the resulting PROGRAM data matches the exact combined
-program image produced during development and validation.
-
----
-
-# Final GBL verification
-
-Expected patched GBL size:
-
-```text
-1,106,384 bytes
-```
-
-Expected patched GBL CRC32:
-
-```text
-0xBAEB8265
-```
-
-Expected patched GBL SHA-256:
-
-```text
-7adbb31d6b7faa8b9290d7b3436af45d42af9c3602a7195cafab774ded84ac61
-```
-
-The output is considered valid only when the rebuilt GBL matches:
-
-- the expected structure,
-- the expected PROGRAM layout,
-- the expected two program modifications,
-- the expected PROGRAM #1 SHA-256,
-- the expected CRC32,
-- the exact six GBL byte differences,
-- the expected final GBL SHA-256.
-
-The file written to disk is read back and checked again.
-
----
-
-# Fail-closed validation
-
-The patcher is intentionally restricted to the known firmware image.
-
-Before a patched file can be written, validation includes:
-
-```text
-Original file size
-Original GBL SHA-256
-GBL tag structure
-Original GBL CRC32
-PROGRAM block count
-PROGRAM flash addresses
-PROGRAM sizes
-Original PROGRAM #1 SHA-256
-
-Patch B original instruction
-Patch B original byte
-
-Patch A original instruction
-Patch A original byte
-
-Patched PROGRAM #1 SHA-256
-Unmodified PROGRAM #2
-Expected rebuilt GBL structure
-Expected patched CRC32
-Exact original-to-patched byte differences
-Expected patched GBL SHA-256
-```
-
-If an expected value does not match, processing is aborted.
-
-The patcher does not attempt to adapt either patch to an unknown firmware
-build.
-
----
-
-# Analyzer
-
-The `--analyze` mode exposes technical information used by this project
-without modifying the firmware.
-
-The supported firmware is automatically read from:
-
-```text
-target/SHTRV-01_build_2.2.4.gbl
-```
-
-Run:
-
-```bash
-python3 patch_firmware_v.1.0.py --analyze
-```
-
-It reports information including:
-
-```text
-Firmware identity
-GBL container information
-GBL tag map
-CRC32 ranges and values
-PROGRAM layout
-PROGRAM SHA-256 values
-
-Patch B address mapping
-Patch B original and patched instruction
-Patch B hexadecimal context
-
-Patch A address mapping
-Patch A original and patched instruction
-Patch A hexadecimal context
-
-Expected combined patch effects
-Expected patched hashes
-```
-
-Analysis mode is read-only.
-
-It is specifically intended to make the technical basis of the implemented
-patches visible and reproducible.
-
-It is not intended to be a general-purpose GBL or binary analyzer.
-
----
-
-# Runtime validation
-
-Binary validation establishes what was changed.
-
-Runtime validation is performed separately to determine whether the expected
-behavior is actually observed on physical hardware.
-
-Several forms of runtime evidence are used:
-
-```text
-Debug logs
-Packet captures
-Device status/statistics
-Longer-term battery-logger reports
-```
-
----
-
-## Patch B-only runtime validation
-
-Patch B was first tested independently on a physical Shelly TRV running
-firmware 2.2.4.
-
-The device contained the periodic mDNS restart bypass but retained the original
-beacon-recovery logic.
-
-A packet capture monitoring UDP port 5353 for the device showed:
-
-```text
-0 periodic mDNS packets observed
-```
-
-during the monitored capture window.
-
-This is consistent with Patch B bypassing the targeted periodic restart call.
-
-It does not establish that mDNS is globally disabled.
-
-Event-driven mDNS callers remain intact.
-
----
-
-## Beacon recovery with Patch B only
-
-The same Patch B-only device continued to produce:
-
-```text
-Beacon skip error! Attempt recovery
-Enter powersave state 1
-Enter powersave state 3 (skip 20)
-```
-
-approximately once per minute.
-
-Importantly, this behavior was observed even with RSSI around:
-
-```text
--58 to -59 dBm
-```
-
-where the normal desired beacon-skip selection was:
-
-```text
-20
-```
-
-This provides runtime evidence that poor RSSI is not required for the observed
-recovery behavior under the tested conditions.
-
-It also demonstrates that suppressing the targeted periodic mDNS restart does
-not by itself suppress the beacon-recovery sequence.
-
----
-
-## Combined Patch A+B runtime validation
-
-The final combined firmware was generated with both modifications and installed
-on a separate physical Shelly TRV.
-
-The device was upgraded from:
-
-```text
-20220202-080736/v2.1.3@d255ad74
-```
-
-to:
+B2.2 intentionally retains the original Shelly firmware identity:
 
 ```text
 20240619-130912/v2.2.4@ee290818
 ```
 
-using the local OTA server.
+No B2.2-specific research version is inserted into the normal Shelly firmware version string.
 
-The patch intentionally retains the original 2.2.4 version string.
+Consequently:
 
-The device successfully rebooted and resumed normal operation.
+```text
+/status
+```
 
-Observed operation included:
+cannot uniquely distinguish B2.2 from Stock 2.2.4.
 
-- Wi-Fi connectivity,
-- cloud connectivity,
-- temperature measurement,
-- thermostat processing,
-- normal RSSI-dependent beacon-skip selection.
+B2.2 is identified during construction and distribution by its exact artifact filename and cryptographic hashes.
 
 ---
 
-## Combined Patch B result
+# Patcher v2.0 reconstruction model
 
-A packet capture was performed after installing the combined firmware.
+`patch_firmware_v2.0.py` is a standalone deterministic reconstruction tool.
 
-During the monitored capture window, the previously identified periodic mDNS
-activity was not observed.
+It does not:
 
-This provides runtime evidence that Patch B remains effective when combined
-with Patch A.
+```text
+download firmware
+copy a finished B2.2 binary
+copy a finished B2.2 GBL
+embed the complete final firmware image
+depend on the qualification reference directory at runtime
+depend on the research directory at runtime
+invent a new firmware variant
+apply additional unqualified fixes
+```
 
-Again, this result applies to the targeted periodic restart path.
+The patcher reconstructs B2.2 from the exact supported Stock 2.2.4 input.
 
-It does not mean that all mDNS functionality has been disabled.
+The qualified Stock-to-B2.2 transformation is represented as approximately:
+
+```text
+1,404 exact authorized stock -> B2.2 byte runs
+```
+
+encoded as sparse transformation data with checked preimages.
+
+This number must not be interpreted as 1,404 independent firmware defects or fixes.
+
+B2.2 still contains exactly nine selected correction components.
+
+The larger number of byte runs results from the compiled and integrated binary transformation required to reproduce the qualified application, including replacement code, relocated/integrated data and the WF200 firmware update.
 
 ---
 
-## Combined Patch A result
+# Reconstruction principle
 
-The combined patched device has been observed for multiple hours.
+For every authorized transformed region, the patcher verifies the expected Stock preimage before applying the corresponding transformation.
 
-During the evaluated multi-hour runtime log, the device continued normal
-minute-based operation.
+Conceptually:
 
-The previously recurring sequence:
+```text
+read Stock byte range
+        |
+        v
+verify expected preimage
+        |
+        +-- mismatch --> ABORT
+        |
+        v
+apply qualified transformation
+        |
+        v
+continue
+```
+
+The transformation therefore depends on known Stock content rather than blindly writing output bytes at offsets.
+
+After all qualified transformations have been applied, the application is validated against the exact qualified B2.2 identity.
+
+The GBL container is then rebuilt with the required application data and final integrity information.
+
+---
+
+# Why v2.0 is not a two-byte patcher
+
+The historical v1.0 implementation modified two PROGRAM bytes and updated the GBL CRC.
+
+That model is no longer applicable.
+
+B2.2 contains:
+
+- additional host-side correction logic,
+- new helper code,
+- lifecycle corrections,
+- synchronization corrections,
+- peripheral cleanup corrections,
+- calibration correction logic,
+- a minimal MQTT guard,
+- the official WF200 3.18.0 firmware,
+- associated integration changes.
+
+The B2.2 application is therefore larger than the Stock application represented by the historical v1.0 workflow.
+
+The old statement:
+
+```text
+exactly 6 bytes differ in the complete GBL
+```
+
+applies only to the historical v1.0 two-patch build.
+
+It must not be used for B2.2.
+
+---
+
+# Correction 1 — A1R / host power-management lifecycle
+
+Reverse engineering identified several problematic host power-management lifecycle cases involving areas such as:
+
+```text
+final-sleep cleanup
+wake-failure handling
+timeout versus cancellation
+late completions
+requested versus committed PM state
+old-completion races
+independent inhibit ownership
+settlement / handoff
+```
+
+An earlier experimental correction called A1 was created for these lifecycle problems.
+
+Subsequent qualification identified a regression introduced by A1 itself.
+
+Five native request paths use power-state request `1` only as a temporary override:
+
+```text
+physical button
+HTTP /psovrd
+Cloud psovrd
+SSI settings_sta
+OTA launcher
+```
+
+The intended native behavior is conceptually:
+
+```text
+selected policy = 3
+        |
+temporary request = 1
+        |
+state 1 temporarily
+        |
+restore selected policy 3
+```
+
+The historical A1 implementation could incorrectly turn such a temporary override into a persistent selected state:
+
+```text
+3 / 3
+  |
+temporary override
+  |
+  v
+1 / 1
+```
+
+That regression belonged to the experimental A1 implementation.
+
+It must not be represented as proof of an equivalent Shelly Stock firmware defect.
+
+A1R corrects this regression while retaining the qualified A1 lifecycle corrections.
+
+A1R recognizes the verified temporary-return paths and preserves the distinction between:
+
+```text
+temporary request
+```
+
+and:
+
+```text
+persistent selected policy
+```
+
+A1R qualification included:
+
+```text
+151 / 151 Thumb-level tests PASS
+```
+
+together with integration and retained-state testing.
+
+---
+
+# Correction 2 — C-C Beacon-Recovery evidence validity
+
+Stock 2.2.4 contains a recurring host-side Beacon Recovery mechanism.
+
+A typical runtime sequence is:
 
 ```text
 Beacon skip error! Attempt recovery
-Enter powersave state 1
-Enter powersave state 3 (skip N)
+        |
+        v
+power-save state 1
+        |
+approximately five serviced seconds
+        |
+        v
+restore connected power-save policy
 ```
 
-was not observed.
+On affected Stock devices this can recur approximately once per minute.
 
-In particular, the additional recurring transition into:
-
-```text
-powersave state 1
-```
-
-was absent from the monitored log.
-
-Normal operation using:
+The investigation established that the host-side value historically exposed as:
 
 ```text
-powersave state 3 (skip 20)
-```
-
-continued under the observed signal conditions.
-
-This is consistent with the intended Patch A control-flow effect.
-
-The result provides multi-hour physical runtime evidence that the targeted
-recovery path is being bypassed under the tested conditions.
-
-It does not establish that the event can never occur under every possible
-runtime condition.
-
----
-
-# Runtime statistics
-
-Firmware 2.2.4 exposes additional beacon-related statistics that are useful
-during investigation.
-
-Observed fields include values such as:
-
-```text
-desired_beacon_skip
 real_beacon_skip
-beacon_err_counter
 ```
 
-Reverse engineering established substantially more context for these fields
-than was available during the earlier phase of the project.
+is not a direct physical WF200 beacon-skip setting.
 
-The desired beacon-skip value represents the normal RSSI-dependent target
-selection.
+The host uses the cumulative WF200 beacon receive counter.
 
-The calculated real-beacon-skip value is derived from beacon receive counter
-behavior and is not equivalent to the desired configured skip value.
-
-Therefore a state such as:
+Conceptually:
 
 ```text
-desired_beacon_skip: 20
-real_beacon_skip:     3
+P = previous cumulative beacon counter
+C = current cumulative beacon counter
+
+delta = C - P
+R = uint8_t(600 / delta)
 ```
 
-is not inherently contradictory.
+`R` is cached and later used by the host recovery decision.
 
-The device can continue using:
+Three evidence-validity problems were identified.
+
+## C1a — signed interpretation
+
+The calculated quotient is reduced to an 8-bit value and later interpreted as signed.
+
+For example:
 
 ```text
-powersave state 3 (skip 20)
+600 / 3 = 200
+uint8    = 0xC8
+int8     = -56
 ```
 
-while the separately calculated beacon statistic has another value.
+A mathematically positive calculated value can therefore enter a signed control domain with different semantics.
 
-The recovery logic must therefore not be interpreted as simply checking
-whether the configured WLAN skip value is 1 or 2.
+## C1b — measurement-window validity
+
+The fixed:
+
+```text
+600 / delta
+```
+
+calculation assumes a measurement relationship that is not encoded together with the retained previous counter value.
+
+If expected measurement opportunities are skipped, a later counter delta can cover a different effective time interval while still being interpreted using the same fixed constant.
+
+The cumulative counter itself may remain correct while the resulting control evidence is no longer valid for the assumed measurement window.
+
+## C2 — stale recovery evidence
+
+Stock recovery can clear the previous counter baseline while retaining the previously calculated recovery value.
+
+A possible sequence is:
+
+```text
+fresh qualifying R
+        |
+        v
+Recovery
+        |
+        v
+previous counter baseline cleared
+cached R retained
+        |
+        v
+next sampling event establishes a new baseline
+        |
+        v
+no new R calculated yet
+        |
+        v
+old R remains available for evaluation
+```
+
+This can extend a transient qualifying event into a longer recurring recovery episode.
+
+The recurrence is metastable, not necessarily permanent until reboot.
+
+A later valid fresh measurement can replace the stale value and allow the device to leave the episode without rebooting.
+
+## C-C behavior
+
+C-C corrects the C1a, C1b and C2 evidence-validity problems.
+
+It does **not** globally disable Beacon Recovery.
+
+Recovery remains possible when evidence is:
+
+```text
+fresh
++
+valid
++
+qualifying
+```
+
+This distinction is important.
+
+B2.2 therefore does not implement the historical v1.0 unconditional Beacon-Recovery bypass.
 
 ---
 
-# Longer-term monitoring
+# Correction 3 — B2 bounded serialization
 
-Short runtime tests are complemented by the project's `battery_logger`.
+The host contains a shared reference counter referred to during the investigation as B2.
 
-The logger periodically collects device information for longer-term comparison
-and report generation.
+B2 represents owners requiring the host to remain at an EM1-capable sleep level.
 
-Depending on firmware support, collected information includes:
-
-```text
-firmware version
-battery percentage
-battery voltage
-uptime
-Wi-Fi RSSI
-beacon statistics
-desired beacon skip
-calculated real beacon skip
-beacon error/recovery counters
-```
-
-Older firmware versions do not expose all of these statistics.
-
-Unavailable fields are therefore recorded as unavailable rather than inferred.
-
-The generated reports are used to compare longer-term runtime behavior and
-battery trends across different firmware and patch configurations.
-
-These reports complement:
+Conceptually:
 
 ```text
-static reverse engineering
-binary validation
-debug logging
-packet capture
+B2 = 0 -> no EM1 owner
+B2 = 1 -> one owner
+B2 = 2 -> two owners
 ```
 
-but do not replace any of them.
+Reverse engineering found inconsistent serialization of read-modify-write operations on this counter.
+
+A task could be preempted between load and store while another context updated the same counter.
+
+This permits lost-update behavior.
+
+Example phantom contribution:
+
+```text
+B2 = 1
+
+Task A:
+load B2 = 1
+
+preempt
+
+Task B:
+release
+1 -> 0
+
+Task A resumes:
+store stale increment
+B2 -> 2
+```
+
+Only one legitimate owner remains, but the counter now contains two contributions.
+
+After that real owner releases:
+
+```text
+2 -> 1
+```
+
+a phantom contribution remains.
+
+The consequence can be:
+
+```text
+EM1 allowed
+instead of
+EM2
+```
+
+The inverse race can also lose a legitimate contribution and allow deeper sleep too early.
+
+B2.2 uses bounded serialization with saved-PRIMASK semantics around the relevant shared-counter operations.
+
+The correction preserves the previous interrupt state rather than blindly enabling interrupts after the protected operation.
+
+No EM3 policy change is introduced by this correction.
 
 ---
 
-# Battery-consumption interpretation
+# Correction 4 — minimal MQTT PUBLISH guard
 
-The original investigation was motivated by unexpectedly high battery
-consumption observed on Shelly TRV Gen1 devices.
+B2.2 contains a minimal guard on the relevant MQTT PUBLISH input path.
 
-The current analysis has identified multiple recurring or potentially
-energy-relevant firmware behaviors.
+This correction is included because a concrete malformed-input failure was demonstrated and a bounded guard was qualified.
 
-These include:
+The public battery-drain patcher documentation intentionally does not reproduce security-sensitive exploit or disclosure details.
 
-- periodic mDNS restart activity,
-- recurring beacon-skip recovery,
-- temporary WLAN powersave state changes,
-- additional conditional power-management behavior investigated in the
-  research repository.
+Those details belong to the separate responsible-disclosure workflow.
 
-However, identifying a recurring firmware activity does not establish its
-quantitative contribution to battery consumption.
-
-The project has not directly measured the electrical current attributable to
-Patch A or Patch B.
-
-Battery percentage and battery voltage are also not direct current
-measurements.
-
-Cross-device battery comparisons are affected by variables including:
-
-- battery cells,
-- battery state,
-- battery calibration,
-- valve activity,
-- temperature regulation,
-- Wi-Fi conditions,
-- device history,
-- hardware variation.
-
-The strongest current conclusion is therefore:
+The B2.2 guard is deliberately minimal and does not imply:
 
 ```text
-Patch A:
-The targeted recurring beacon-recovery path is bypassed and the expected
-runtime suppression has been observed.
-
-Patch B:
-The targeted periodic connected-state mDNS restart is bypassed and the
-expected network-level suppression has been observed.
-
-Combined firmware:
-Both modifications operate together on physical hardware under the tested
-conditions.
-
-Battery-life improvement:
-Not yet established.
+remote code execution demonstrated
+arbitrary write demonstrated
+complete MQTT parser redesign
 ```
 
-Long-term battery monitoring remains separate from verification of the binary
-and runtime effects of the patches.
+Qualification of the selected guard included:
+
+```text
+258 / 258 target/parser/worker tests PASS
+```
 
 ---
 
-# Scope of the technical conclusion
+# Correction 5 — official Silicon Labs WF200 3.18.0
 
-The following properties are directly established by binary analysis and
-deterministic patch validation:
+Stock Shelly TRV 2.2.4 uses:
 
-- the exact supported original firmware,
-- the exact original instructions,
-- the exact patched instructions,
-- the two PROGRAM byte modifications,
-- the resulting control-flow changes,
-- the unchanged branch destinations,
-- the unchanged normal RSSI-dependent beacon-skip selection code,
-- the unchanged event-driven mDNS restart callers,
-- the exact rebuilt GBL differences,
-- the resulting CRC32,
-- the resulting PROGRAM SHA-256,
-- the resulting GBL SHA-256.
+```text
+Shelly FMAC:
+3.7.0
 
-Physical-device testing additionally establishes under the observed test
-conditions:
+WF200 radio firmware:
+3.16.1
+```
 
-- successful installation of the combined patched firmware,
-- successful boot,
-- normal basic TRV operation,
-- continued normal RSSI-dependent beacon-skip selection,
-- suppression of the targeted periodic mDNS traffic during the capture window,
-- absence of the targeted beacon-recovery sequence during the evaluated
-  multi-hour combined-patch log.
+B2.2 retains the Shelly host FMAC integration while replacing the radio firmware with the official Silicon Labs:
 
-The current evidence does **not** establish:
+```text
+WF200 3.18.0
+```
 
-- behavior under every possible WLAN condition,
-- behavior under every possible RSSI condition,
-- that mDNS is completely disabled,
-- that the two targeted mechanisms can never interact indirectly,
-- indefinite long-term firmware stability,
-- the quantitative energy cost of either original mechanism,
-- that either mechanism was the sole cause of historical battery drain,
-- that either mechanism was the primary cause of historical battery drain,
-- a quantified improvement in battery life.
+The later Silicon Labs release contains a power-save related correction for a condition in which the device can fail to sleep after a power-save mode change.
 
-These distinctions are intentional.
+The official WF200 3.18.0 firmware was integrated into the Shelly application and qualified for correct relocation and runtime initialization.
+
+Hardware testing established successful operation of:
+
+```text
+FMAC 3.7.0
++
+WF200 3.18.0
+```
+
+including:
+
+```text
+WF200 initialization
+WLAN scan
+association
+DHCP
+cloud connectivity
+connected power save
+normal TRV operation
+```
+
+This establishes compatibility of the integrated radio firmware under the tested conditions.
+
+It does **not** establish that WF200 3.18.0 alone fixes the historical Shelly TRV battery drain.
+
+---
+
+# Correction 6 — Calibration Restore Guard
+
+A concrete calibration-state defect was identified in the restore path.
+
+A queued successful restore could immediately enqueue itself again.
+
+Conceptually:
+
+```text
+queued restore
+        |
+        v
+successful completion
+        |
+        v
+restore scheduling path
+        |
+        v
+same work immediately queued again
+```
+
+B2.2 adds a Calibration Restore Guard that prevents the qualified self-requeue condition while preserving the intended calibration workflow.
+
+Qualification covered native paths, scalar state combinations, queue behavior, countdown behavior and negative cases.
+
+---
+
+# Correction 7 — P01 Battery-PA3 release
+
+The battery ADC path uses PA3 as part of the measurement resource lifecycle.
+
+A timeout path could return without correctly releasing PA3.
+
+A later successful measurement could repair the state, but this means the timeout path itself did not have complete resource cleanup.
+
+B2.2 adds an ownership-aware release.
+
+The correction is intended to release PA3 when the affected path owns the resource while avoiding an unrelated release of state owned elsewhere.
+
+The electrical current contribution of the original defect has not been directly measured.
+
+Therefore:
+
+```text
+resource-lifecycle defect proven
+```
+
+does not imply:
+
+```text
+quantitative battery-drain contribution proven
+```
+
+---
+
+# Correction 8 — P02 bounded synchronous I2C timeout retirement
+
+The analyzed synchronous I2C/display timeout path could return with state equivalent to:
+
+```text
+transaction unfinished
+interrupt enable state retained
+no complete abort / retirement
+```
+
+This leaves the peripheral transaction lifecycle incompletely retired.
+
+B2.2 adds a bounded timeout-retirement path.
+
+The correction is designed to complete the required shutdown/retirement work without introducing an unbounded wait.
+
+Qualified helper code occupies the application range recorded by the B2.2 build evidence as:
+
+```text
+[0x104740, 0x1047C8)
+```
+
+---
+
+# Correction 9 — P03 WLAN-GPIO interrupt-mask correction
+
+A WLAN GPIO notification disable path passed:
+
+```text
+decimal 10
+```
+
+to an interface that expects a bit mask.
+
+The value therefore had mask semantics different from the intended interrupt selection.
+
+This could leave an intended interrupt source active while affecting other mask bits incorrectly.
+
+B2.2 corrects the interrupt-mask operation.
+
+The qualified correction occupies the application range recorded by the B2.2 build evidence as:
+
+```text
+[0x104840, 0x104854)
+```
+
+---
+
+# Additional qualified B2.2 code regions
+
+The B2.2 build evidence records additional integrated correction regions:
+
+```text
+P02 helper:
+[0x104740, 0x1047C8)
+
+P03:
+[0x104840, 0x104854)
+
+P01:
+[0x104880, 0x1048BC)
+
+Calibration Restore Guard:
+[0x1050F4, 0x105108)
+```
+
+These ranges describe qualified B2.2 application regions.
+
+They must not be interpreted as the complete Stock-to-B2.2 difference set.
+
+The final B2.2 application identity is defined by the complete application hash.
+
+---
+
+# Observer-free design
+
+B2.2 is intentionally observer-free.
+
+It does not contain the diagnostic PM52/cmd66 observer used in earlier research builds.
+
+It also does not contain the D3 observer or other diagnostic-only instrumentation.
+
+The B2.2 build retains only the RAM required by the selected A1/A1R lifecycle implementation.
+
+No observer RAM region is part of the final B2.2 candidate.
+
+This matters because long-term runtime testing should evaluate the integrated correction set without the additional diagnostic observer.
+
+---
+
+# Patcher input validation
+
+Before reconstruction proceeds, the patcher validates the supplied Stock firmware.
+
+The validation boundary includes the exact supported input identity and the expected structure needed by the reconstruction logic.
+
+At minimum, the supported Stock image is pinned by:
+
+```text
+Filename:
+SHTRV-01_build_2.2.4.gbl
+
+Size:
+1,106,384 bytes
+
+SHA256:
+5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
+```
+
+The patcher also validates expected preimage material before applying authorized transformations.
+
+A firmware file that merely reports version `2.2.4` is not sufficient.
+
+The exact supported binary identity is required.
+
+---
+
+# Fail-closed behavior
+
+The v2.0 patcher is deliberately fail-closed.
+
+Failure conditions tested during qualification include:
+
+```text
+modified Stock input
+truncated GBL input
+corrupted CRC / integrity
+B2.2 supplied as input instead of Stock
+modified expected preimage data
+forced output-integrity mismatch
+```
+
+The patcher must not continue by guessing, relocating, or partially applying the correction set.
+
+Conceptually:
+
+```text
+unexpected input
+        |
+        v
+validation failure
+        |
+        v
+NO firmware output accepted as B2.2
+```
+
+---
+
+# Application reconstruction
+
+The patcher applies the qualified Stock-to-B2.2 transformation to the supported application data.
+
+After reconstruction, the resulting application must match:
+
+```text
+Size:
+1,069,320 bytes
+
+SHA256:
+7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
+
+CRC32:
+42657D97
+```
+
+A byte-level transformation can be considered successful only if the complete resulting application matches this identity.
+
+Passing individual local preimage checks is not sufficient.
+
+---
+
+# GBL reconstruction
+
+After the B2.2 application has been reconstructed, the patcher rebuilds the required GBL PROGRAM content and final END checksum.
+
+The resulting GBL must match:
+
+```text
+Size:
+1,126,156 bytes
+
+SHA256:
+912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
+
+END CRC32:
+52A97051
+
+Whole-file CRC32 residue:
+2144DF1C
+```
+
+The final GBL identity is an independent acceptance condition.
+
+A correct application embedded into an incorrectly rebuilt container must not be accepted.
+
+---
+
+# Output readback verification
+
+The patcher does not treat a successful file write as sufficient.
+
+After writing the generated artifacts, it reopens and verifies the written output.
+
+This protects against errors occurring between:
+
+```text
+validated in-memory result
+```
+
+and:
+
+```text
+actual file stored on disk
+```
+
+The final application and GBL identities must still match after readback.
+
+---
+
+# Deterministic reconstruction verification
+
+The reconstructed v2.0 output was independently compared with the qualified B2.2 reference artifacts.
+
+Application:
+
+```text
+generated SHA256:
+7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
+
+reference SHA256:
+7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
+
+byte-for-byte comparison:
+IDENTICAL
+```
+
+GBL:
+
+```text
+generated SHA256:
+912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
+
+reference SHA256:
+912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
+
+byte-for-byte comparison:
+IDENTICAL
+```
+
+This establishes deterministic reproduction of the qualified B2.2 artifacts.
+
+---
+
+# Standalone dependency test
+
+The final patcher was also tested in isolation.
+
+The test directory contained only:
+
+```text
+patch_firmware_v2.0.py
+target/SHTRV-01_build_2.2.4.gbl
+```
+
+The reconstruction succeeded and generated the exact expected B2.2 application and GBL identities.
+
+This confirms that runtime reconstruction does not depend on:
+
+```text
+reference/
+research/
+qualification build trees
+Codex
+REA
+Ghidra
+freeze scripts
+reference B2.2 binaries
+```
+
+The qualification environment was used to derive and verify the reconstruction recipe.
+
+It is not required to run the final patcher.
+
+---
+
+# Automated patcher tests
+
+The v2.0 patcher test suite currently contains:
+
+```text
+18 tests
+```
+
+The suite includes positive reconstruction and fail-closed negative cases.
+
+Current result:
+
+```text
+Ran 18 tests
+
+OK
+```
+
+Some negative tests intentionally trigger an error message such as an output-hash mismatch.
+
+Such an expected rejection message is not a suite failure when the final test result is:
+
+```text
+OK
+```
+
+---
+
+# B2.2 qualification coverage
+
+The B2.2 build qualification included component-level and integration testing.
+
+Recorded qualification coverage includes:
+
+```text
+A1R:
+151 / 151
+
+C-C:
+512 + 10000 cases
+
+B2:
+2060 + 102
+plus mixed/preemption cases
+
+MQTT:
+258 cases
+
+Calibration Restore Guard:
+68 native
+66535 scalar
+104 queue
+30 countdown
+plus negative tests
+
+P01:
+128 + 6
+
+P02:
+90 + 480
+
+P03:
+128 native
+
+motor / B2 / P01 interaction:
+10 + 30
+
+sleep / PA8:
+48
+
+battery / OTA / boot:
+10002 + 2 + 4 + 3
+
+interfaces / flows:
+10 interactions
+13 flow groups
+```
+
+The build process additionally established:
+
+```text
+multiple clean application constructions identical
+GBL constructions byte-identical
+zero unexplained application differences
+zero unexplained container differences
+observer absence verified
+```
+
+These results establish strong offline qualification of the selected B2.2 build.
+
+---
+
+# Physical runtime validation
+
+B2.2 has subsequently been installed on physical Shelly TRV Gen1 hardware.
+
+The initial hardware canary successfully demonstrated the complete operational chain:
+
+```text
+OTA
+        |
+        v
+cold reboot
+        |
+        v
+Shelly 2.2.4 application boot
+        |
+        v
+FMAC 3.7.0
+        |
+        v
+WF200 3.18.0 initialization
+        |
+        v
+WLAN scan / association
+        |
+        v
+DHCP
+        |
+        v
+calibration
+        |
+        v
+connected power save
+        |
+        v
+cloud connectivity
+```
+
+After approximately 29 hours, the initial canary showed:
+
+```text
+reboot counter:       1
+reconnect counter:    1
+beacon error counter: 0
+desired beacon skip:  20
+real beacon skip:     21
+battery display:      99 %
+voltage:              approximately 4.027 V
+```
+
+No unexpected additional reboot or reconnect was observed in that period.
+
+The hardware test was subsequently expanded to the active test fleet on 2026-11-02.
+
+B2.2 is therefore no longer an offline-only firmware candidate.
+
+---
+
+# Current hardware qualification boundary
+
+Physical runtime success establishes that B2.2 can:
+
+```text
+boot on real hardware
+initialize WF200 3.18.0
+associate with WLAN
+obtain DHCP configuration
+operate connected power save
+connect to the cloud
+perform normal TRV operation
+```
+
+It does not yet establish:
+
+```text
+indefinite long-term stability
+restored original battery lifetime
+quantified battery-life improvement
+the sole historical battery-drain root cause
+the primary historical battery-drain root cause
+```
+
+Long-term fleet observation remains in progress.
+
+---
+
+# Battery interpretation
+
+The Shelly battery percentage displayed by the firmware is not a coulomb counter.
+
+Static analysis showed that the displayed percentage is derived from the measured/cached battery voltage.
+
+This means the displayed percentage can:
+
+```text
+rise without charging
+fall non-linearly
+differ between batteries at similar state of charge
+```
+
+For short-term battery comparisons, voltage is therefore generally more informative than percentage alone.
+
+Neither value directly measures instantaneous or accumulated current consumption.
+
+---
+
+# Firmware defect versus battery causation
+
+A central interpretation rule for this project is:
+
+```text
+firmware defect
+!=
+battery-drain root cause
+```
+
+Likewise:
+
+```text
+qualified correction
+!=
+measured energy saving
+```
+
+and:
+
+```text
+successful B2.2 runtime
+!=
+long-term battery-life improvement proven
+```
+
+Several concrete firmware defects have been demonstrated and corrected in B2.2.
+
+Their individual and combined quantitative contribution to the historical battery drain has not yet been fully measured.
+
+---
+
+# Deferred findings
+
+Several additional findings were intentionally excluded from B2.2 because they were not part of the selected qualified correction set.
+
+Examples include:
+
+```text
+P04 motor-timeout movement-accounting issue
+valve_min_percent mixed-unit issue
+raw ADC transient publication
+raw TXDMA candidates
+additional peripheral candidates
+EM3 changes
+FastPS diagnostic ideas
+```
+
+Exclusion does not necessarily mean that a finding is invalid.
+
+It means that the finding was not selected as part of the current qualified B2.2 firmware.
+
+A future correction must be qualified separately and would create a new firmware candidate with a new application and GBL identity.
+
+---
+
+# Historical mDNS work
+
+Earlier project versions investigated recurring connected-state mDNS responder restart behavior.
+
+Historical testing demonstrated that the periodic restart could be suppressed without globally disabling mDNS.
+
+However, longer-term testing also demonstrated that removing the targeted periodic mDNS restart did not by itself prevent poor battery runtime or the Beacon-Recovery behavior.
+
+For this reason, and because B2.2 contains only the selected qualified correction set, the historical mDNS bypass is not included in B2.2.
+
+Historical mDNS evidence remains part of the research history.
+
+It must not be represented as a current B2.2 correction.
+
+---
+
+# Historical v1.0 patcher
+
+`patch_firmware_v.1.0.py` is a historical implementation.
+
+It produced the earlier combined experimental firmware based on:
+
+```text
+Beacon-Recovery bypass
++
+periodic mDNS restart bypass
+```
+
+That implementation and its output identities are not the current patching workflow.
+
+Historical v1.0 values such as:
+
+```text
+SHTRV-01_2.2.4_beacon_mdns_patch.gbl
+
+SHA256:
+7adbb31d6b7faa8b9290d7b3436af45d42af9c3602a7195cafab774ded84ac61
+
+CRC32:
+BAEB8265
+```
+
+must not be used to validate B2.2.
+
+The current expected B2.2 GBL is:
+
+```text
+SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
+
+SHA256:
+912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
+
+END CRC32:
+52A97051
+```
 
 ---
 
 # Reproducibility summary
 
-For the supported firmware:
+Current supported input:
 
 ```text
 Device:
-Shelly TRV (SHTRV-01)
+Shelly TRV Gen1 / SHTRV-01
 
 Firmware:
 20240619-130912/v2.2.4@ee290818
 
+Stock GBL:
+SHTRV-01_build_2.2.4.gbl
 
-Original GBL size:
+Size:
 1,106,384 bytes
 
-Original GBL SHA-256:
+SHA256:
 5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
-
-Original GBL CRC32:
-0xDC7BAB58
-
-
-Original PROGRAM #1 SHA-256:
-4dc770fe535008ef150f3a144354169199e1a0e235173abcc3f7387b95ee9b5c
-
-
-Patch B — periodic mDNS restart bypass
-
-Instruction:
-PROGRAM 0x0001E0F0
-
-02 D0
-->
-02 E0
-
-Modified PROGRAM byte:
-0x0001E0F1
-D0 -> E0
-
-GBL patch location:
-0x00024645
-D0 -> E0
-
-
-Patch A — beacon-skip recovery bypass
-
-Instruction:
-PROGRAM 0x0001E1C8
-
-31 DC
-->
-31 E0
-
-Modified PROGRAM byte:
-0x0001E1C9
-DC -> E0
-
-GBL patch location:
-0x0002471D
-DC -> E0
-
-
-Combined patched PROGRAM #1 SHA-256:
-06742a2632a3d45cf697b8be85045914d004f30644dad17b3d0d20012c87c61b
-
-
-Combined patched GBL CRC32:
-0xBAEB8265
-
-Combined patched GBL SHA-256:
-7adbb31d6b7faa8b9290d7b3436af45d42af9c3602a7195cafab774ded84ac61
-
-
-Expected complete GBL differences:
-
-0x00024645  D0 -> E0
-0x0002471D  DC -> E0
-0x0010E1CC  58 -> 65
-0x0010E1CD  AB -> 82
-0x0010E1CE  7B -> EB
-0x0010E1CF  DC -> BA
-
-
-Total changed GBL bytes:
-6
 ```
 
-These values define the exact combined firmware transformation currently
-implemented by this project.
+Current reconstruction tool:
+
+```text
+patch_firmware_v2.0.py
+```
+
+Expected application:
+
+```text
+SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
+
+Size:
+1,069,320 bytes
+
+SHA256:
+7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
+
+CRC32:
+42657D97
+```
+
+Expected GBL:
+
+```text
+SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
+
+Size:
+1,126,156 bytes
+
+SHA256:
+912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
+
+END CRC32:
+52A97051
+
+Whole-file CRC32 residue:
+2144DF1C
+```
+
+Successful reconstruction requires the generated application and GBL to match these exact identities.
+
+---
+
+# Current technical conclusion
+
+The current evidence establishes:
+
+```text
+exact supported Stock input identified
+
+nine selected B2.2 corrections qualified
+
+deterministic Stock -> B2.2 reconstruction implemented
+
+fail-closed input/preimage/output validation implemented
+
+generated B2.2 application byte-identical to qualified reference
+
+generated B2.2 GBL byte-identical to qualified reference
+
+standalone patcher operation verified
+
+B2.2 physical boot and basic runtime operation verified
+
+WF200 3.18.0 physical integration verified
+```
+
+The current evidence does **not** establish:
+
+```text
+historical battery-drain root cause conclusively proven
+
+B2.2 guaranteed to eliminate historical battery drain
+
+long-term battery-life improvement quantified
+
+indefinite long-term stability proven
+
+B2.2 suitable as an official production release
+```
+
+These boundaries are intentional.
+
+The current firmware status is:
+
+```text
+B2.2 EXPERIMENTAL
+
+physical runtime testing:
+in progress
+
+long-term battery validation:
+in progress
+```

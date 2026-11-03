@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Local OTA server for the Shelly TRV Gen1 2.2.4 beacon-skip + mDNS patch.
+Local OTA server for the Shelly TRV Gen1 2.2.4 b2.2 patch.
 
 This server does not patch firmware and does not flash a device automatically.
 
@@ -29,21 +29,21 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-VERSION = "1.0"
-REVISION = "2"
+VERSION = "2.0"
+REVISION = "1"
 
-EXPECTED_PATCHED_GBL_SIZE = 1_106_384
+EXPECTED_PATCHED_GBL_SIZE = 1_126_156
 
 EXPECTED_PATCHED_GBL_SHA256 = (
-    "7adbb31d6b7faa8b9290d7b3436af45d42af9c3602a7195cafab774ded84ac61"
+    "912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c"
 )
 
-EXPECTED_PATCHED_GBL_CRC32 = 0xBAEB8265
+EXPECTED_PATCHED_GBL_CRC32 = 0x52A97051
 
-DEFAULT_FIRMWARE_NAME = "SHTRV-01_2.2.4_beacon_mdns_patch.gbl"
+DEFAULT_FIRMWARE_NAME = "SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl"
 TARGET_DIRECTORY_NAME = "target"
 
-PREFERRED_PORTS = (80, 8000)
+PREFERRED_PORTS = (80, )
 
 CHUNK_SIZE = 64 * 1024
 
@@ -270,8 +270,7 @@ def select_port(address: str) -> int:
             return port
 
     raise OTAServerError(
-        "Neither TCP port 80 nor TCP port 8000 is available "
-        f"on {address}."
+        f"TCP port 80 is not available on {address}."
     )
 
 
@@ -501,7 +500,7 @@ class FirmwareRequestHandler(
     firmware_path: Path
     firmware_url_path: str
 
-    server_version = "ShellyTRVOTA/1.0"
+    server_version = "ShellyTRVOTA/2.0"
     sys_version = ""
 
     def log_message(
