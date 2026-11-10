@@ -1,1209 +1,537 @@
-# Shelly TRV Gen1 2.2.4 Firmware Patcher
+\# Shelly TRV Gen1 – Firmware Patcher
 
-Local reconstruction and OTA tools for the Shelly TRV Gen1 (`SHTRV-01`) firmware 2.2.4.
 
-> **Experimental software**
+
+\*\*An independent firmware patcher for the Shelly TRV Gen1 (SHTRV-01), developed to investigate severe battery drain and improve firmware reliability.\*\*
+
+
+
+!\[Patcher](https://img.shields.io/badge/Patcher-v2.0-blue)
+
+!\[Firmware](https://img.shields.io/badge/Firmware-B2.2\_Beta-orange)
+
+!\[Supported](https://img.shields.io/badge/Supported-Stock\_2.2.4-green)
+
+!\[Testing](https://img.shields.io/badge/Hardware\_Test-6%2B\_Days-blue)
+
+
+
+> \*\*B2.2 Beta – November 2026\*\*
+
 >
-> This project reconstructs the experimental B2.2 firmware candidate from one exact supported Shelly TRV Gen1 Stock 2.2.4 firmware image.
+
+> During more than six days of hardware testing, the severe battery depletion previously documented with original Shelly firmware has not been observed in the regular B2.2 test fleet.
+
 >
-> B2.2 has been deterministically reconstructed, independently verified byte-for-byte, installed on physical Shelly TRV hardware, and is currently undergoing longer-term runtime and battery observation.
+
+> \*\*Known issue:\*\* Unexpected automatic reboots have occurred on several devices. Their cause remains under investigation.
+
 >
-> The historical Shelly TRV battery-drain root cause has **not** been conclusively proven, and long-term battery-life improvement with B2.2 has **not** yet been established.
 
----
+> B2.2 is beta firmware, not an officially supported Shelly release or a proven permanent solution to every battery-drain issue.
 
-## Purpose
 
-This repository provides two tools:
+
+\## Why This Project Exists
+
+
+
+The original Shelly TRV Gen1 can exhibit unusually high battery consumption. Some devices investigated in this project repeatedly discharged from nearly full to an indicated 0% within approximately six days.
+
+
+
+Extensive firmware analysis identified several defects involving Wi-Fi power management, Beacon Recovery, host sleep-state handling, and resource management.
+
+
+
+Rather than applying a single workaround, \*\*B2.2 combines nine selected corrections\*\* into one reproducible firmware build.
+
+
+
+The goal is to preserve normal thermostat operation while addressing identified firmware defects that may contribute to excessive energy consumption.
+
+
+
+\## Battery Drain: Stock vs. B2.2
+
+
+
+Historical Shelly Cloud data provides examples of severe battery depletion under original Stock firmware.
+
+
+
+Our current B2.2 testing provides an initial comparison using the same hardware family, including several of the same devices.
+
+
+
+| Observation | Historical Stock firmware | B2.2 Beta |
+
+|---|---|---|
+
+| Severe battery drain | Repeatedly observed within approximately 6 days | Not observed during the first 6+ days |
+
+| Battery behavior | Rapid depletion in documented episodes | Relatively stable voltage in current snapshots |
+
+| Beacon Recovery | Recurring problematic Recovery episodes documented | No comparable persistent Recovery loop visible in available observations |
+
+| Thermostat operation | Normal functionality, but battery issues on some devices | Operational in testing, including recovery after unexpected restarts |
+
+| Stability | Not established by the historical battery data | Unexpected automatic reboots observed |
+
+| Assessment | Historical reference | Ongoing beta evaluation |
+
+
+
+\### Historical Stock Firmware
+
+
+
+!\[Historical Stock firmware battery discharge](docs/assets/trv\_stock\_discharge\_readme.png)
+
+
+
+\*Historical Shelly Cloud battery-percentage data from January and February 2026.\*
+
+
+
+Examples of documented discharge episodes:
+
+
+
+| Device | Reported battery level | Duration |
+
+|---|---|---:|
+
+| TRV .11 | 95% → 0% | 6.33 days |
+
+| TRV .77 | 95.5% → 0% | 5.79 days |
+
+| TRV .226 | 95% → 0% | 6.08 days |
+
+
+
+All devices were running original Shelly firmware during these historical episodes. The exact Stock firmware version is not independently recorded for every historical measurement.
+
+
+
+\### B2.2 Beta
+
+
+
+!\[B2.2 battery voltage development](docs/assets/trv\_b22\_voltage\_readme.png)
+
+
+
+\*Battery-voltage measurements collected from November 3–9, 2026.\*
+
+
+
+Four continuously comparable devices showed the following voltage changes:
+
+
+
+| Device | Voltage change |
+
+|---|---:|
+
+| TRV .71 | −20 mV |
+
+| TRV .77 | −19 mV |
+
+| TRV .88 | −22 mV |
+
+| TRV .97 | −16 mV |
+
+
+
+These readings cover approximately 5.4 days of available voltage snapshots. The overall B2.2 firmware test had exceeded six days by November 9.
+
+
+
+\*\*No comparable rapid battery depletion was observed.\*\*
+
+
+
+The graphs use different measurements: historical firmware-reported battery percentages versus current battery voltage. They are not directly equivalent measurements of remaining battery capacity.
+
+
+
+There is also no simultaneous, matched Stock control group. The results are encouraging but do not establish a quantified improvement in battery lifetime or identify a single root cause.
+
+
+
+\## Current Hardware Test Status
+
+
+
+\*\*Last evaluated: November 9, 2026\*\*
+
+
+
+The regular B2.2 observation fleet consists of six Shelly TRV Gen1 devices.
+
+
+
+A separate device running Stock firmware for MQTT security research is excluded from this evaluation. One B2.2 device was recharged during testing, so its battery measurements are evaluated from a separate baseline.
+
+
+
+\### Positive observations
+
+
+
+\- No historical Stock-like massive battery depletion during the first six days.
+
+\- Normal Wi-Fi and cloud connectivity observed during operation.
+
+\- Normal temperature measurement, calibration, and thermostat functions observed.
+
+\- No persistent Beacon-Recovery loop visible in the available B2.2 debug observations.
+
+\- Exact firmware reconstruction and validation successfully verified.
+
+
+
+\### Known reliability issue
+
+
+
+Several test devices have restarted automatically without user intervention.
+
+
+
+The underlying reset cause has not yet been established. A significant reboot-counter anomaly was also observed on one device.
+
+
+
+Devices were reachable and operational again following their observed restarts, but uninterrupted thermostat control during each reset has not been independently verified.
+
+
+
+\*\*These restart issues are documented and remain under active investigation.\*\*
+
+
+
+B2.2 is therefore offered for voluntary beta testing, not as a fully validated stable firmware release.
+
+
+
+\## What Does B2.2 Change?
+
+
+
+B2.2 integrates nine selected correction components:
+
+
+
+| Component | Purpose |
+
+|---|---|
+
+| A1R | Host power-management lifecycle handling |
+
+| C-C | Beacon-Recovery evidence validation |
+
+| B2 | Sleep-inhibit counter synchronization |
+
+| MQTT guard | Selected malformed MQTT PUBLISH input handling |
+
+| WF200 3.18.0 | Updated official Silicon Labs radio firmware |
+
+| Calibration Restore Guard | Prevent unintended repeated restore scheduling |
+
+| P01 | Battery ADC resource cleanup |
+
+| P02 | Synchronous I2C timeout cleanup |
+
+| P03 | WLAN-GPIO interrupt-mask correction |
+
+
+
+B2.2 does not globally disable Beacon Recovery and does not include the historical periodic mDNS bypass.
+
+
+
+The specific contributions of these corrections to battery consumption have not been isolated.
+
+
+
+For technical explanations, binary analysis and qualification details, see \[Technical Details](docs/technical-details.md).
+
+
+
+\## Quick Start
+
+
+
+\### 1. Obtain the supported Stock firmware
+
+
+
+The patcher supports only the exact Shelly TRV Gen1 firmware:
+
+
+
+| Property | Value |
+
+|---|---|
+
+| Device | Shelly TRV Gen1 / SHTRV-01 |
+
+| Stock version | 2.2.4 |
+
+| Build | `20240619-130912/v2.2.4@ee290818` |
+
+| GBL size | 1,106,384 bytes |
+
+
+
+Place the original firmware file at:
+
+
 
 ```text
-patch_firmware_v2.0.py
-ota_server.py
+
+target/SHTRV-01\_build\_2.2.4.gbl
+
 ```
 
-`patch_firmware_v2.0.py` reconstructs the exact qualified B2.2 firmware from the supported Stock 2.2.4 input.
 
-`ota_server.py` validates the generated B2.2 GBL and serves it locally to a Shelly TRV over HTTP for an explicitly initiated OTA update.
 
-The project is intentionally restricted to one specific firmware build.
+The original firmware must be obtained independently. No proprietary firmware is included in this repository.
 
-It is not intended to be:
 
-- a general Shelly firmware patcher,
-- a general GBL editor,
-- a firmware downloader,
-- a generic OTA server,
-- a device-management service.
 
----
+\### 2. Generate B2.2
 
-# Current firmware: B2.2
 
-B2.2 is the current observer-free integrated experimental build.
 
-It contains exactly nine selected qualified correction components:
+On Linux or macOS:
 
-1. **A1R including the A1 lifecycle correction**
-2. **C-C Beacon-Recovery evidence correction**
-3. **B2 bounded serialization with saved-PRIMASK semantics**
-4. **minimal MQTT PUBLISH guard**
-5. **official Silicon Labs WF200 3.18.0**
-6. **Calibration Restore Guard**
-7. **P01 ownership-aware Battery-PA3 release**
-8. **P02 bounded synchronous I2C timeout retirement**
-9. **P03 WLAN-GPIO notification interrupt-mask correction**
 
-There is no implicit tenth correction.
 
-B2.2 represents:
+```bash
 
-```text
-All Known Qualified Fixes
+python3 patch\_firmware\_v2.0.py
+
 ```
 
-within the selected qualification scope.
 
-It does **not** mean:
 
-```text
-all suspicious code paths ever identified
+On Windows:
+
+
+
+```powershell
+
+py patch\_firmware\_v2.0.py
+
 ```
 
-and it does not mean that every possible source of battery drain has been corrected.
 
----
 
-## Not included in B2.2
+The patcher validates the exact Stock firmware and reconstructs the B2.2 artifacts locally.
 
-The following research, diagnostic, deferred, or historical modifications are not part of B2.2:
 
-- periodic mDNS bypass,
-- MIN80,
-- D3 observer,
-- PM52/cmd66 observer,
-- additional diagnostic counters,
-- additional debug logging,
-- FastPS experiments,
-- P04,
-- P05/P06/P07/P08/P10/P11/P12/P13,
-- `valve_min_percent` correction,
-- raw-ADC publication correction,
-- raw TXDMA candidates,
-- EM3 experiments.
 
-In particular, the historical periodic mDNS modification from the old v1.0 patcher is **not** included in B2.2.
+Expected output:
 
----
 
-# Firmware distribution
-
-**This repository does not contain or distribute Shelly firmware.**
-
-Users must obtain the supported original firmware independently.
-
-The patcher operates entirely on a local firmware file.
-
-It does not:
-
-- download Shelly firmware,
-- upload firmware to an external service,
-- contain the complete Stock firmware,
-- contain the complete B2.2 firmware,
-- copy a finished B2.2 reference artifact at runtime.
-
-The generated firmware remains local to the user's computer.
-
----
-
-# Supported Stock firmware
-
-Only the specifically qualified Shelly TRV Gen1 firmware is supported.
 
 ```text
-Device:
-Shelly TRV Gen1 / SHTRV-01
 
-Version:
-2.2.4
+target/SHTRV-01\_2.2.4\_B2.2\_EXPERIMENTAL.bin
 
-Build:
-20240619-130912/v2.2.4@ee290818
+target/SHTRV-01\_2.2.4\_B2.2\_EXPERIMENTAL.gbl
+
 ```
 
-Expected Stock GBL:
+
+
+The `EXPERIMENTAL` filenames are retained to preserve the verified B2.2 artifact identities. The current public testing classification is Beta.
+
+
+
+\### 3. Start the OTA server
+
+
+
+On Linux or macOS:
+
+
+
+```bash
+
+sudo python3 ota\_server.py
+
+```
+
+
+
+On Windows:
+
+
+
+```powershell
+
+py ota\_server.py
+
+```
+
+
+
+The OTA server validates the generated B2.2 GBL before making it available over the local network.
+
+
+
+\*\*TCP port 80 is required for the supported OTA workflow.\*\*
+
+
+
+The server does not automatically install firmware.
+
+
+
+\### 4. Install on the TRV
+
+
+
+Use the firmware URL displayed by the OTA server to initiate the update.
+
+
+
+General OTA request format:
+
+
 
 ```text
-Filename:
-SHTRV-01_build_2.2.4.gbl
 
-Size:
-1,106,384 bytes
+http://<TRV-IP>/ota?url=http://<COMPUTER-IP>/SHTRV-01\_2.2.4\_B2.2\_EXPERIMENTAL.gbl
 
-SHA256:
+```
+
+
+
+For detailed installation instructions, including Windows, Linux, macOS and troubleshooting, see the \[User Guide](USER\_GUIDE.md).
+
+
+
+\## Firmware Verification
+
+
+
+The patcher uses exact input and output validation. Unknown or modified firmware is rejected.
+
+
+
+\*\*Supported Stock GBL SHA-256\*\*
+
+
+
+```text
+
 5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
+
 ```
 
-The patcher refuses to reconstruct B2.2 if the input firmware does not match the supported identity.
 
-A file reporting version `2.2.4` is not sufficient.
 
-The exact binary identity must match.
+\*\*Expected B2.2 GBL SHA-256\*\*
 
----
 
-# Expected B2.2 output
-
-## Application
 
 ```text
-Filename:
-SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
 
-Size:
-1,069,320 bytes
-
-SHA256:
-7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-
-CRC32:
-42657D97
-```
-
-## GBL
-
-```text
-Filename:
-SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-
-Size:
-1,126,156 bytes
-
-SHA256:
 912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
 
-END CRC32:
-52A97051
-
-Whole-file CRC32 residue:
-2144DF1C
 ```
 
-These identities define the current qualified B2.2 artifacts.
 
-A different application or GBL hash represents a different firmware candidate.
 
----
+The reconstructed application and GBL have been verified byte-for-byte against the qualified B2.2 reference artifacts.
 
-# Native Shelly firmware identity
 
-B2.2 deliberately retains the original Shelly firmware identity:
 
-```text
-20240619-130912/v2.2.4@ee290818
-```
+The v2.0 patcher also passed its 18 automated regression tests.
 
-Therefore the normal Shelly firmware version reported by `/status` does not distinguish Stock 2.2.4 from B2.2.
 
-B2.2 is identified during reconstruction and distribution by its exact artifact hashes.
 
----
+The Shelly firmware version string remains unchanged at `2.2.4`. The `/status` endpoint alone cannot distinguish Stock from B2.2.
 
-# Requirements
 
-- Python 3
-- the exact supported Stock Shelly TRV 2.2.4 GBL
-- a computer capable of running the Python scripts
-- for OTA installation: network connectivity between the computer and the Shelly TRV
-- for the supported OTA workflow: TCP port 80
 
-No third-party Python packages are required for the patcher or OTA server.
+\## Known Limitations
 
-Both tools use the Python standard library.
 
----
 
-# Repository layout
+\- \*\*Automatic restarts:\*\* Observed on several devices; root cause unknown.
 
-Typical repository layout:
+\- \*\*Battery lifetime:\*\* Initial six-day results are positive, but normal long-term battery lifetime has not yet been established.
 
-```text
-Shelly_TRV_2.2.4_Patcher/
-├── patch_firmware_v2.0.py
-├── ota_server.py
-├── README.md
-├── USER_GUIDE.md
-├── SECURITY.md
-├── docs/
-│   ├── technical-details.md
-│   └── ota_server.md
-├── target/
-│   └── .gitkeep
-└── tests/
-    └── README.md
-```
+\- \*\*Root cause:\*\* Multiple firmware defects may contribute to excessive battery consumption. Their individual contributions have not been quantified.
 
-The `target/` directory is used for local firmware input and generated output.
+\- \*\*Firmware support:\*\* Only the exact supported Stock 2.2.4 build can be used.
 
-Firmware files inside `target/` must not be committed.
+\- \*\*Official support:\*\* This is an independent community project, not a Shelly firmware release.
 
----
 
-# Quick start
 
-## 1. Obtain the supported Stock firmware
+\## Documentation
 
-Obtain the Shelly TRV Gen1 Stock 2.2.4 GBL independently.
 
-It must match:
 
-```text
-Build:
-20240619-130912/v2.2.4@ee290818
+| Document | Description |
 
-Size:
-1,106,384 bytes
+|---|---|
 
-SHA256:
-5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
-```
+| \[User Guide](USER\_GUIDE.md) | Installation and troubleshooting |
 
----
+| \[Technical Details](docs/technical-details.md) | Firmware corrections and reverse engineering |
 
-## 2. Place the Stock firmware in `target/`
+| \[OTA Server](docs/ota\_server.md) | Local OTA server and HTTP operation |
 
-The input file must be named:
+| \[Testing](tests/README.md) | Reconstruction and qualification testing |
 
-```text
-SHTRV-01_build_2.2.4.gbl
-```
+| \[Security Policy](SECURITY.md) | Reporting security vulnerabilities |
 
-and placed at:
+| \[Contributing](CONTRIBUTING.md) | Contribution requirements |
 
-```text
-target/SHTRV-01_build_2.2.4.gbl
-```
 
----
 
-## 3. Run the B2.2 patcher
+The detailed historical Stock-versus-B2.2 comparison and runtime investigation are documented separately from this overview.
 
-Run:
 
-```bash
-python3 patch_firmware_v2.0.py
-```
 
-The patcher validates the Stock firmware and reconstructs the qualified B2.2 artifacts.
+\## Firmware Distribution
 
-Expected outputs:
 
-```text
-target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
-target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
 
-The reconstruction is accepted only if the final application and GBL match the expected qualified identities.
+\*\*No original or modified Shelly firmware images are distributed by this repository.\*\*
 
----
 
-## 4. Verify the generated hashes
 
-Expected application:
+Users must obtain the exact supported Stock firmware independently and run the patcher locally.
 
-```text
-SHA256:
-7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-```
 
-Expected GBL:
 
-```text
-SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-```
+The project contains original tooling and documentation, not redistributable Shelly firmware binaries.
 
-The patcher performs its own output-integrity verification and verifies the written files again after creation.
 
----
 
-## 5. Start the OTA server
+\## Disclaimer
 
-On macOS or Linux, TCP port 80 normally requires elevated privileges:
 
-```bash
-sudo python3 ota_server.py
-```
 
-The OTA server automatically loads:
+This is an independent project and is not affiliated with, endorsed by, or supported by Shelly.
 
-```text
-target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
 
-and independently validates it before opening the HTTP server.
 
-Expected firmware identity:
+Firmware modification and installation carry risks, including device malfunction, interrupted heating control, loss of configuration, and device failure.
 
-```text
-Size:
-1,126,156 bytes
 
-SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
 
-END CRC32:
-0x52A97051
-```
+Use the tools and generated firmware at your own risk.
 
-The current OTA server uses:
 
-```text
-TCP port 80
-```
 
-only.
-
-There is no automatic port-8000 fallback.
-
----
-
-## 6. Start the OTA update
-
-The OTA server prints the firmware URL after startup.
-
-General firmware URL:
-
-```text
-http://<COMPUTER-IP>/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
-
-General Shelly OTA request:
-
-```text
-http://<SHELLY-TRV-IP>/ota?url=http://<COMPUTER-IP>/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
-
-Example with `curl`:
-
-```bash
-curl "http://<SHELLY-TRV-IP>/ota?url=http://<COMPUTER-IP>/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl"
-```
-
-Replace both placeholders with the actual local addresses.
-
-Keep `ota_server.py` running until the firmware transfer has completed.
-
-Do not intentionally interrupt power during firmware installation.
-
----
-
-## 7. Verify the device after OTA
-
-A completed HTTP transfer does not by itself prove successful installation.
-
-After the OTA operation, wait for the TRV to reboot and become reachable again.
-
-Expected native firmware identity:
-
-```text
-Device:
-SHTRV-01
-
-Version:
-2.2.4
-
-Build:
-20240619-130912/v2.2.4@ee290818
-```
-
-Also verify normal device operation:
-
-- Wi-Fi connectivity,
-- cloud connectivity if enabled,
-- temperature measurement,
-- thermostat operation,
-- calibration state,
-- valve movement.
-
-Because B2.2 retains the original version string, `/status` alone cannot prove that B2.2 is installed.
-
----
-
-# Patcher v2.0
-
-`patch_firmware_v2.0.py` is a deterministic reconstruction tool.
-
-Its purpose is:
-
-```text
-exact supported Stock 2.2.4
-        |
-        v
-exact qualified B2.2
-```
-
-It does not attempt to produce a merely functionally equivalent image.
-
-The final generated application and GBL must be byte-identical to the qualified B2.2 references.
-
----
-
-## Reconstruction method
-
-The supported Stock-to-B2.2 transformation is encoded as approximately:
-
-```text
-1,404 authorized transformation runs
-```
-
-with checked Stock preimages.
-
-Conceptually:
-
-```text
-read expected Stock region
-        |
-        v
-verify expected preimage
-        |
-        +-- mismatch --> abort
-        |
-        v
-apply qualified transformation
-```
-
-The unchanged data originates from the verified Stock image.
-
-The patcher then reconstructs the required application and GBL integrity data.
-
-The approximately 1,404 transformation runs must not be interpreted as 1,404 independent firmware fixes.
-
-B2.2 contains exactly nine selected correction components.
-
----
-
-# Fail-closed validation
-
-The v2.0 patcher is deliberately fail-closed.
-
-Qualification includes rejection of cases such as:
-
-- modified Stock GBL,
-- truncated GBL,
-- corrupt input integrity,
-- B2.2 supplied as input instead of Stock,
-- altered expected preimage data,
-- forced output-integrity failure.
-
-Unexpected firmware is not patched heuristically.
-
-The patcher does not search for similar instruction patterns in unknown firmware builds.
-
----
-
-# Deterministic reconstruction verification
-
-The final v2.0 patcher has reproduced the qualified B2.2 reference artifacts byte-for-byte.
-
-Application:
-
-```text
-Generated SHA256:
-7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-
-Reference SHA256:
-7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-
-Byte comparison:
-IDENTICAL
-```
-
-GBL:
-
-```text
-Generated SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-
-Reference SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-
-Byte comparison:
-IDENTICAL
-```
-
----
-
-# Standalone patcher verification
-
-The final patcher was also tested in an isolated directory containing only:
-
-```text
-patch_firmware_v2.0.py
-
-target/
-└── SHTRV-01_build_2.2.4.gbl
-```
-
-No B2.2 reference artifact was present.
-
-No research tree or qualification build tree was present.
-
-The generated artifacts still matched the qualified B2.2 identities exactly.
-
-This confirms that the distributed patcher does not depend on the final reference image as a runtime shortcut.
-
----
-
-# Automated patcher tests
-
-The current v2.0 regression suite completed:
-
-```text
-18 tests
-
-OK
-```
-
-The suite includes positive reconstruction and negative fail-closed cases.
-
-Some negative tests intentionally cause validation error messages.
-
-An expected rejection during a negative test does not represent a suite failure if the final result is:
-
-```text
-OK
-```
-
----
-
-# B2.2 technical summary
-
-## A1R
-
-A1R preserves the qualified host power-management lifecycle corrections while fixing a regression introduced by the earlier experimental A1 implementation.
-
-The original A1 regression involved temporary power-state overrides being incorrectly retained as persistent selected policy in specific native paths.
-
-A1R qualification included:
-
-```text
-151 / 151 Thumb tests PASS
-```
-
----
-
-## C-C Beacon-Recovery evidence correction
-
-C-C corrects problems in the evidence used by the Stock Beacon-Recovery decision.
-
-The investigation identified issues involving:
-
-- signed interpretation of the calculated control value,
-- measurement-window validity,
-- stale recovery evidence.
-
-C-C does **not** globally disable Beacon Recovery.
-
-Recovery remains possible with fresh, valid and qualifying evidence.
-
-This differs fundamentally from the historical v1.0 unconditional Recovery bypass.
-
----
-
-## B2 bounded serialization
-
-B2 is a shared host sleep-inhibit/reference counter.
-
-Unsynchronized read-modify-write operations could lose or create contributions under preemption.
-
-B2.2 adds bounded serialization using saved-PRIMASK semantics around the relevant operations.
-
-This prevents the selected lost-update races while preserving the previous interrupt state.
-
----
-
-## Minimal MQTT PUBLISH guard
-
-B2.2 contains a minimal guard for a qualified malformed-input failure in the MQTT PUBLISH path.
-
-Security-sensitive reproduction details are intentionally maintained separately from this public battery-drain repository.
-
-The public project does not claim:
-
-```text
-remote code execution
-```
-
-or:
-
-```text
-arbitrary write
-```
-
-because neither has been demonstrated.
-
----
-
-## WF200 3.18.0
-
-Stock Shelly TRV 2.2.4 uses:
-
-```text
-Shelly FMAC 3.7.0
-WF200 3.16.1
-```
-
-B2.2 integrates the official Silicon Labs:
-
-```text
-WF200 3.18.0
-```
-
-The integrated combination:
-
-```text
-FMAC 3.7.0
-+
-WF200 3.18.0
-```
-
-has successfully operated on physical TRV hardware, including:
-
-- initialization,
-- WLAN scan,
-- association,
-- DHCP,
-- cloud connectivity,
-- connected power save.
-
-WF200 3.18.0 alone has not been proven to fix the historical battery drain.
-
----
-
-## Calibration Restore Guard
-
-A qualified calibration defect allowed a successful queued restore to immediately schedule itself again.
-
-B2.2 includes a guard against the selected self-requeue condition.
-
----
-
-## P01 Battery-PA3 release
-
-A battery ADC timeout path could return without correctly releasing PA3.
-
-B2.2 adds an ownership-aware cleanup path.
-
-The electrical energy contribution of the original resource-lifecycle defect has not been directly measured.
-
----
-
-## P02 synchronous I2C timeout retirement
-
-An I2C/display timeout path could return with incomplete transaction state and interrupt-related resources still active.
-
-B2.2 adds bounded retirement of the selected timeout condition.
-
----
-
-## P03 WLAN-GPIO interrupt mask
-
-A WLAN notification disable path used a numeric value where the called helper expected a bit mask.
-
-B2.2 corrects the interrupt-mask semantics.
-
----
-
-# OTA server
-
-The included:
-
-```text
-ota_server.py
-```
-
-is a small project-specific local HTTP server.
-
-Current server version:
-
-```text
-2.0 revision 1
-```
-
-HTTP server identity:
-
-```text
-ShellyTRVOTA/2.0
-```
-
-It serves only:
-
-```text
-/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
-
-It does not provide directory listings or general filesystem access.
-
----
-
-## OTA-server validation
-
-Before serving firmware, the OTA server verifies:
-
-- exact file size,
-- exact SHA-256,
-- stored END CRC32,
-- independently calculated END CRC32,
-- expected B2.2 END CRC32.
-
-If validation fails, the server does not start.
-
----
-
-## HTTP behavior
-
-The server uses:
-
-```text
-HTTP/1.1
-```
-
-and implements byte-range support.
-
-Normal requests are served with:
-
-```text
-200 OK
-```
-
-and valid Range requests with:
-
-```text
-206 Partial Content
-```
-
-The current B2.2-specific server revision has been successfully syntax-checked, validated against the exact B2.2 GBL and started on TCP port 80.
-
-A new LAN-side HTTP 200/206 transfer test of this exact v2.0 configuration was not performed during the most recent remote/VPN maintenance session.
-
-Historical versions of the server had separately demonstrated both full-file and Range transfers.
-
----
-
-# Physical B2.2 runtime status
-
-B2.2 has been installed on physical Shelly TRV Gen1 hardware.
-
-The initial canary successfully completed:
-
-```text
-OTA
-→ cold reboot
-→ Shelly 2.2.4 boot
-→ FMAC 3.7.0
-→ WF200 3.18.0 initialization
-→ WLAN scan / association
-→ DHCP
-→ calibration
-→ connected power save
-→ cloud connectivity
-```
-
-After approximately 29 hours, the initial canary showed:
-
-```text
-reboot_counter:       1
-reconnect_counter:    1
-beacon_err_counter:   0
-desired_beacon_skip:  20
-real_beacon_skip:     21
-battery:              99 %
-voltage:              approximately 4.027 V
-```
-
-No unexpected additional reboot or reconnect was observed during that period.
-
----
-
-# Current B2.2 fleet test
-
-On 2026-11-02 at approximately 18:55 local time, the active hardware test fleet was moved to B2.2.
-
-The current fleet contains seven physical TRV devices.
-
-There is currently no simultaneously running Stock 2.2.4 control device in the active fleet.
-
-Historical Stock snapshots remain available for comparison, but they are not equivalent to a concurrent matched control.
-
-Long-term B2.2 observation is ongoing.
-
----
-
-# Battery testing
-
-The project was originally motivated by unexpectedly high battery consumption observed on Shelly TRV Gen1 devices.
-
-Several concrete firmware defects and potentially energy-relevant mechanisms have since been identified.
-
-However:
-
-```text
-firmware defect
-!=
-battery-drain root cause
-```
-
-and:
-
-```text
-successful correction
-!=
-quantified battery-life improvement
-```
-
-The project therefore does not currently claim that B2.2 has restored normal battery lifetime.
-
----
-
-## Battery percentage
-
-The battery percentage reported by the Stock firmware is not a coulomb counter.
-
-Static analysis shows that the displayed percentage is derived from battery voltage.
-
-For short-term comparison, voltage is therefore generally more useful than percentage alone.
-
-Neither percentage nor voltage is a direct current or accumulated-energy measurement.
-
----
-
-# Project status
-
-Current status:
-
-```text
-Supported Stock firmware:
-CONFIRMED
-
-B2.2 selected correction set:
-QUALIFIED
-
-Deterministic Stock -> B2.2 reconstruction:
-CONFIRMED
-
-Generated B2.2 application byte-identical to reference:
-CONFIRMED
-
-Generated B2.2 GBL byte-identical to reference:
-CONFIRMED
-
-Standalone patcher execution:
-CONFIRMED
-
-Fail-closed negative tests:
-CONFIRMED
-
-Automated v2.0 tests:
-18 PASS
-
-OTA-server B2.2 validation:
-CONFIRMED
-
-OTA-server v2.0 startup:
-CONFIRMED
-
-Physical B2.2 installation:
-CONFIRMED
-
-Physical B2.2 boot:
-CONFIRMED
-
-WF200 3.18.0 initialization:
-CONFIRMED
-
-WLAN / DHCP / cloud:
-CONFIRMED
-
-Initial approximately 29-hour canary:
-STABLE UNDER OBSERVED CONDITIONS
-
-B2.2 fleet rollout:
-ACTIVE
-
-Long-term stability:
-UNDER OBSERVATION
-
-Long-term battery behavior:
-UNDER OBSERVATION
-
-Quantified battery-life improvement:
-NOT ESTABLISHED
-
-Historical battery-drain root cause:
-NOT CONCLUSIVELY PROVEN
-```
-
----
-
-# Historical v1.0 patcher
-
-The previous:
-
-```text
-patch_firmware_v.1.0.py
-```
-
-implemented a different experimental firmware consisting of:
-
-```text
-Beacon-Recovery bypass
-+
-periodic mDNS restart bypass
-```
-
-Its generated firmware:
-
-```text
-SHTRV-01_2.2.4_beacon_mdns_patch.gbl
-```
-
-is historical and is not B2.2.
-
-Historical v1.0 output identities such as:
-
-```text
-SHA256:
-7adbb31d6b7faa8b9290d7b3436af45d42af9c3602a7195cafab774ded84ac61
-```
-
-must not be used to validate the current B2.2 firmware.
-
----
-
-# Testing
-
-Current testing includes:
-
-- exact Stock firmware validation,
-- deterministic B2.2 reconstruction,
-- preimage validation,
-- corrupted-input rejection,
-- truncated-input rejection,
-- wrong-firmware rejection,
-- output-integrity rejection,
-- byte-for-byte reference comparison,
-- standalone patcher reconstruction,
-- automated v2.0 regression tests,
-- component qualification,
-- integration qualification,
-- OTA-server B2.2 validation,
-- OTA-server startup testing,
-- physical B2.2 installation,
-- physical B2.2 boot,
-- WF200 3.18.0 hardware initialization,
-- WLAN association,
-- DHCP,
-- cloud connectivity,
-- connected power save,
-- longer-term battery and runtime logging.
-
-Detailed test information is maintained in:
-
-```text
-tests/README.md
-```
-
-Detailed firmware implementation information is maintained in:
-
-```text
-docs/technical-details.md
-```
-
-Detailed OTA-server information is maintained in:
-
-```text
-docs/ota_server.md
-```
-
----
-
-# Research repository
-
-The reverse-engineering investigation, runtime observations, firmware analysis and qualification work are maintained separately from this end-user patcher repository.
-
-Research repository:
-
-```text
-Shelly-TRV-Gen1-2.2.4-Battery-Drain-Investigation
-```
-
-The research repository contains the technical evidence behind the selected B2.2 correction set.
-
-This repository contains the reproducible end-user reconstruction and OTA workflow.
-
-Security-sensitive MQTT research is maintained separately and must not be conflated with the battery-drain investigation.
-
----
-
-# Local firmware files and `target/`
-
-The `target/` directory exists so a fresh clone already contains the directory expected by the patcher and OTA server.
-
-Firmware files inside it must remain local.
-
-Typical `.gitignore` behavior:
-
-```gitignore
-target/*
-!target/.gitkeep
-```
-
-The repository may contain:
-
-```text
-target/.gitkeep
-```
-
-but must not contain:
-
-```text
-target/SHTRV-01_build_2.2.4.gbl
-target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
-target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
-
-This applies to both original and reconstructed Shelly firmware.
-
----
-
-# Safety
-
-The patcher is designed to fail closed.
-
-If an expected input, preimage, reconstruction or final identity does not match, the process is aborted.
-
-The OTA server independently validates the B2.2 GBL before serving it.
-
-Neither tool automatically initiates flashing on a Shelly TRV.
-
-Firmware modification and OTA installation always involve risk.
-
-Do not intentionally remove power while a firmware update is being processed.
-
-Keep a practical recovery path available before testing experimental firmware.
-
----
-
-# Security
-
-The OTA server is intended only for temporary use on a trusted local network.
-
-It:
-
-- does not provide authentication,
-- does not provide TLS,
-- should not be exposed directly to the public Internet,
-- should be stopped when no longer required.
-
-Security-sensitive firmware findings should follow the process documented in:
-
-```text
-SECURITY.md
-```
-
-Do not publish unpublished exploit details or responsible-disclosure material through normal bug reports or pull requests.
-
----
-
-# Evidence boundary
-
-The project deliberately distinguishes between different evidence levels.
-
-```text
-static reverse engineering
-        !=
-qualified correction
-
-qualified correction
-        !=
-exact integrated reconstruction
-
-exact reconstruction
-        !=
-successful OTA
-
-successful OTA
-        !=
-successful runtime
-
-successful runtime
-        !=
-long-term stability
-
-long-term stability
-        !=
-battery-life improvement
-
-battery-life improvement
-        !=
-historical root cause proven
-```
-
-These distinctions are intentional.
-
----
-
-# Current conclusion
-
-The strongest defensible current conclusion is:
-
-```text
-B2.2 is an exact, deterministically reconstructable,
-observer-free integrated experimental firmware containing
-nine selected qualified corrections.
-
-The v2.0 patcher reproduces the qualified B2.2 application
-and GBL byte-for-byte from the exact supported Stock 2.2.4
-firmware.
-
-B2.2 has successfully operated on physical Shelly TRV Gen1
-hardware and is currently undergoing longer-term fleet
-observation.
-
-Long-term battery-life improvement and the complete historical
-battery-drain root cause remain unproven.
-```
-
----
-
-# Disclaimer
-
-This is an independent research project.
-
-It is not affiliated with, endorsed by, sponsored by, or supported by Shelly.
-
-Shelly and related product names are used only to identify the hardware and firmware being studied.
-
-Firmware modification and flashing can result in malfunction, loss of configuration, device failure, or an unusable device.
-
-Use of these tools and any firmware generated with them is at the user's own risk.
-
-This project does not grant rights to third-party firmware, trademarks or other intellectual property.
-
----
-
-# License
-
-The original source code and documentation in this repository are licensed under the MIT License.
-
-See:
-
-```text
-LICENSE
-```
-
-The license applies only to the original code and documentation contained in this repository.
-
-It does **not** grant rights to Shelly firmware, trademarks, product names or other third-party intellectual property.
-
-No original or modified Shelly firmware images are distributed as part of this project.
+The original project code and documentation are licensed under the \[MIT License](LICENSE). This license does not grant rights to proprietary Shelly firmware.

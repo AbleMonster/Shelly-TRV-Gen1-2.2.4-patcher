@@ -1,367 +1,147 @@
-# Tests
+# B2.2 Firmware – Testing and Validation
 
-This directory documents validation, deterministic reconstruction testing, OTA-related testing, physical-device runtime testing, and longer-term monitoring performed for the Shelly TRV Gen1 2.2.4 B2.2 firmware project.
+This directory documents the validation, deterministic reconstruction, OTA-server testing, hardware qualification, and battery/stability monitoring performed for the **Shelly TRV Gen1 (SHTRV-01) B2.2 Beta** firmware project.
 
-The current firmware reconstruction tool is:
+**Last updated:** November 9, 2026
+**Patcher:** v2.0
+**Firmware:** B2.2 Beta
+**Base firmware:** Shelly TRV Gen1 Stock 2.2.4
 
-```text
-patch_firmware_v2.0.py
-```
+> **Current assessment**
+>
+> B2.2 has passed its documented reconstruction and component qualification tests and has operated on physical TRV hardware for more than six days.
+>
+> No severe battery depletion comparable to the documented historical Stock episodes has been observed in the regular B2.2 fleet during that period.
+>
+> **Known reliability issue:** Several devices have experienced unexpected automatic reboots. Their cause remains unconfirmed. Long-term firmware stability and battery lifetime are not yet established.
 
-The current integrated firmware candidate is:
+## 1. Validation Scope
 
-```text
-B2.2
-```
+The project separates five types of evidence:
 
-B2.2 is an observer-free experimental build containing the selected set of nine qualified corrections.
+| Test area | What it establishes |
+|---|---|
+| Stock firmware validation | The exact supported input firmware |
+| Deterministic reconstruction | Byte-identical B2.2 application and GBL |
+| OTA-server validation | Correct firmware identity and server behavior |
+| Physical runtime testing | Real-device installation, boot and operation |
+| Battery and stability monitoring | Measured behavior over time |
 
-The project intentionally does not include proprietary Shelly firmware binaries as test fixtures.
+These are independent evidence levels.
 
-Firmware-dependent tests are performed locally using an original firmware image supplied separately by the user.
+A successful reconstruction does not prove a successful OTA installation. Successful OTA installation does not prove long-term stability, and a stable voltage trend does not prove that the historical battery-drain root cause has been identified.
 
----
+## 2. Supported Firmware
 
-## Test scope
+The v2.0 patcher accepts only the following original firmware:
 
-Testing is divided into five distinct areas:
+| Property | Value |
+|---|---|
+| Device | Shelly TRV Gen1 / SHTRV-01 |
+| Firmware | Stock 2.2.4 |
+| Build | `20240619-130912/v2.2.4@ee290818` |
+| Filename | `SHTRV-01_build_2.2.4.gbl` |
+| Size | 1,106,384 bytes |
 
-1. Stock firmware input validation,
-2. deterministic B2.2 reconstruction validation,
-3. OTA-server validation,
-4. physical-device runtime validation,
-5. longer-term battery and stability monitoring.
-
-These test objectives must remain separate.
-
-For example:
-
-```text
-exact reconstruction
-!=
-successful OTA installation
-!=
-successful hardware runtime
-!=
-long-term stability
-!=
-battery-life improvement
-!=
-historical battery-drain root cause proven
-```
-
-A result at one evidence level must not automatically be promoted to another.
-
----
-
-# Supported Stock firmware
-
-The current v2.0 patcher supports exactly:
+**Stock SHA-256:**
 
 ```text
-Device:
-Shelly TRV Gen1 / SHTRV-01
-
-Firmware:
-2.2.4
-
-Build:
-20240619-130912/v2.2.4@ee290818
-```
-
-Supported Stock GBL:
-
-```text
-Filename:
-SHTRV-01_build_2.2.4.gbl
-
-Size:
-1,106,384 bytes
-
-SHA256:
 5c4a0b222a313350952f6b1200a855833402f168bd286090c23bd4d018ab918f
 ```
 
-The patcher is intentionally restricted to this exact firmware identity.
+Unsupported, modified, truncated or corrupted firmware must be rejected.
 
-A file is not accepted merely because:
+The public repository does not contain proprietary Shelly firmware images.
 
-- its filename matches,
-- it reports version 2.2.4,
-- its size appears plausible,
-- its general GBL structure resembles the supported image.
+## 3. Qualified B2.2 Artifacts
 
-Unexpected input must fail closed.
+The deterministic reconstruction produces two files.
 
-No copy of the Stock firmware is stored in the public repository.
+### Application binary
 
----
+| Property | Value |
+|---|---|
+| Filename | `SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin` |
+| Size | 1,069,320 bytes |
+| CRC32 | `42657D97` |
 
-# Current B2.2 correction set
-
-B2.2 contains exactly nine selected correction components:
-
-```text
-1. A1R including A1 lifecycle correction
-2. C-C Beacon-Recovery evidence correction
-3. B2 bounded serialization with saved-PRIMASK semantics
-4. minimal MQTT PUBLISH guard
-5. official Silicon Labs WF200 3.18.0
-6. Calibration Restore Guard
-7. P01 ownership-aware Battery-PA3 release
-8. P02 bounded synchronous I2C timeout retirement
-9. P03 WLAN-GPIO notification interrupt-mask correction
-```
-
-There is no implicit tenth correction.
-
-B2.2 does not include:
+**SHA-256:**
 
 ```text
-periodic mDNS bypass
-MIN80
-D3 observer
-PM52/cmd66 observer
-additional diagnostic counters
-additional debug logging
-FastPS experiments
-P04
-P05
-P06
-P07
-P08
-P10
-P11
-P12
-P13
-valve_min_percent correction
-raw-ADC publication correction
-raw TXDMA candidates
-EM3 experiments
-```
-
-Historical tests involving those components remain useful research evidence but do not describe the current B2.2 firmware.
-
----
-
-# Expected B2.2 artifacts
-
-## Application
-
-The expected reconstructed application is:
-
-```text
-Filename:
-SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
-
-Size:
-1,069,320 bytes
-
-SHA256:
 7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-
-CRC32:
-42657D97
 ```
 
-## GBL
+### OTA GBL
 
-The expected reconstructed GBL is:
+| Property | Value |
+|---|---|
+| Filename | `SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl` |
+| Size | 1,126,156 bytes |
+| END CRC32 | `52A97051` |
+| Whole-file CRC32 residue | `2144DF1C` |
+
+**SHA-256:**
 
 ```text
-Filename:
-SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-
-Size:
-1,126,156 bytes
-
-SHA256:
 912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-
-END CRC32:
-52A97051
-
-Whole-file CRC32 residue:
-2144DF1C
 ```
 
-These values define the current qualified B2.2 artifacts.
+The `EXPERIMENTAL` filenames remain unchanged to preserve the qualified artifact identities and compatibility with the existing reconstruction and OTA workflow.
 
-Any firmware with a different final application or GBL identity is a different candidate.
+The release classification is **Beta**.
 
----
+B2.2 deliberately retains the original Shelly firmware version string. Consequently, the `/status` endpoint alone cannot distinguish B2.2 from Stock 2.2.4.
 
-# Native firmware identity
+## 4. Deterministic Reconstruction
 
-B2.2 deliberately retains the original Shelly firmware identity:
+The primary acceptance criterion is exact binary reproduction.
+
+The generated application and GBL must be **byte-identical** to their qualified B2.2 reference artifacts.
+
+### Reconstruction method
+
+The patcher:
+
+1. Validates the original Stock firmware.
+2. Verifies expected source bytes before modification.
+3. Applies approximately 1,404 authorized transformation runs.
+4. Reconstructs the application and GBL integrity information.
+5. Validates the resulting binary identities.
+6. Writes the files and verifies them again after writing.
+
+The approximately 1,404 transformation runs describe the binary reconstruction process. They do not represent 1,404 separate firmware fixes.
+
+B2.2 contains exactly nine selected correction components.
+
+### Verified result
+
+| Artifact | Comparison result |
+|---|---|
+| Application BIN | Byte-identical |
+| OTA GBL | Byte-identical |
+| Unexplained application differences | None reported |
+| Unexplained container differences | None reported |
+
+The final artifacts matched the qualified reference hashes exactly.
+
+### Standalone test
+
+The patcher was also executed in an isolated environment containing only:
 
 ```text
-20240619-130912/v2.2.4@ee290818
-```
-
-Therefore:
-
-```text
-/status
-```
-
-cannot uniquely prove whether a device is running Stock 2.2.4 or B2.2.
-
-B2.2 is identified during construction and distribution by its exact artifact identity.
-
----
-
-# Target-directory workflow
-
-The current patcher uses the repository-local:
-
-```text
-target/
-```
-
-directory.
-
-Supported Stock input:
-
-```text
+patch_firmware_v2.0.py
 target/SHTRV-01_build_2.2.4.gbl
 ```
 
-Expected generated application:
+No completed B2.2 reference image, research tree, Ghidra installation or REA environment was required.
 
-```text
-target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
-```
+The generated files matched the qualified B2.2 artifacts.
 
-Expected generated GBL:
+This demonstrates that normal patcher execution does not rely on copying an existing patched firmware image.
 
-```text
-target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
+## 5. Automated Patcher Tests
 
-A typical local target directory may therefore contain:
-
-```text
-target/
-├── .gitkeep
-├── SHTRV-01_build_2.2.4.gbl
-├── SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.bin
-└── SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
-```
-
-Firmware artifacts are excluded from version control.
-
-Only repository-control files such as:
-
-```text
-target/.gitkeep
-```
-
-are intended to be tracked.
-
----
-
-# Deterministic reconstruction test
-
-The principal v2.0 acceptance criterion is not functional similarity.
-
-The generated output must be byte-identical to the qualified B2.2 reference.
-
-The accepted reconstruction produced:
-
-```text
-Application SHA256:
-7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-
-GBL SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-```
-
-Direct byte comparison against the qualified reference artifacts returned:
-
-```text
-BIN cmp exit = 0
-GBL cmp exit = 0
-```
-
-This establishes:
-
-```text
-generated application
-==
-qualified B2.2 application
-```
-
-and:
-
-```text
-generated GBL
-==
-qualified B2.2 GBL
-```
-
-byte-for-byte.
-
----
-
-# Standalone reconstruction test
-
-The patcher was also tested independently from the research and qualification environment.
-
-The isolated test directory contained only:
-
-```text
-patch_firmware_v2.0.py
-
-target/
-└── SHTRV-01_build_2.2.4.gbl
-```
-
-No qualified B2.2 reference output was present.
-
-No research tree was present.
-
-No build tree was present.
-
-No Ghidra or REA dependency was required at runtime.
-
-The standalone patcher successfully reconstructed the expected B2.2 artifacts.
-
-The generated identities again matched:
-
-```text
-Application:
-7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-
-GBL:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-```
-
-This confirms that the distributed patcher does not depend on the reference firmware output as a runtime shortcut.
-
----
-
-# Patcher dependency check
-
-Static inspection of the final `patch_firmware_v2.0.py` confirmed that it does not read the qualified B2.2 reference output during normal reconstruction.
-
-The final standalone workflow requires only:
-
-```text
-patch_firmware_v2.0.py
-+
-exact supported Stock 2.2.4 GBL
-```
-
-The qualification environment used to derive the reconstruction is not required for normal end-user execution.
-
----
-
-# Automated v2.0 acceptance tests
-
-During qualification, the reconstructed v2.0 patcher was exercised with an automated test suite.
-
-Current result:
+The v2.0 acceptance suite completed successfully:
 
 ```text
 Ran 18 tests
@@ -369,970 +149,362 @@ Ran 18 tests
 OK
 ```
 
-The suite includes positive reconstruction tests and fail-closed negative cases.
+The suite covers successful reconstruction and intentional failure cases.
 
-One negative test deliberately causes output-integrity rejection and may print an error such as:
+### Fail-closed tests
 
-```text
-ERROR: output GBL SHA256 mismatch
-```
+The documented negative cases include:
 
-That message is expected within the negative test.
+| Test | Expected behavior |
+|---|---|
+| Modified Stock GBL | Reject |
+| Truncated input | Reject |
+| Invalid input integrity | Reject |
+| B2.2 supplied instead of Stock | Reject |
+| Modified expected preimage | Reject |
+| Forced output-integrity mismatch | Reject |
 
-The significant suite result is:
+The patcher must not silently accept a near-match, partially apply corrections, or produce an output labeled as qualified B2.2 after a validation failure.
 
-```text
-18 tests completed
-OK
-```
+Some negative tests deliberately generate error messages. These are expected when the final test-suite result is successful.
 
----
+## 6. B2.2 Component Qualification
 
-# Fail-closed negative tests
+B2.2 contains exactly nine selected correction components:
 
-The v2.0 qualification specifically covers rejection cases including:
+| Component | Qualification area |
+|---|---|
+| A1R | Power-management lifecycle and A1 regression correction |
+| C-C | Beacon-Recovery evidence validation |
+| B2 | Bounded sleep-inhibit counter synchronization |
+| MQTT guard | Selected MQTT PUBLISH malformed-input condition |
+| WF200 3.18.0 | Updated official Silicon Labs radio firmware integration |
+| Calibration Restore Guard | Restore scheduling and state handling |
+| P01 | Battery PA3 resource release |
+| P02 | Synchronous I2C timeout retirement |
+| P03 | WLAN-GPIO interrupt-mask correction |
 
-```text
-1. Stock GBL with a modified byte
-2. truncated GBL
-3. corrupt CRC / integrity
-4. B2.2 supplied as input instead of Stock
-5. modified expected preimage data
-6. forced output-integrity failure
-```
+The original qualification records include the following test counts:
 
-The required behavior is:
+| Qualification group | Recorded tests |
+|---|---|
+| A1R | 151 / 151 |
+| C-C | 512 + 10,000 |
+| B2 | 2,060 + 102, plus mixed/preemption cases |
+| MQTT | 258 |
+| Calibration Restore Guard | 68 native + 66,535 scalar + 104 queue + 30 countdown, plus negative cases |
+| P01 | 128 + 6 |
+| P02 | 90 + 480 |
+| P03 | 128 native |
+| Motor / B2 / P01 interactions | 10 + 30 |
+| Sleep / PA8 | 48 |
+| Battery / OTA / boot | 10,002 + 2 + 4 + 3 |
+| Interfaces / flows | 10 interactions + 13 flow groups |
 
-```text
-unexpected input
-        |
-        v
-validation failure
-        |
-        v
-abort
-```
+These are recorded qualification results for the selected build and its supporting tests.
 
-The patcher must not:
+They are **not** a count of distinct firmware defects and do not establish long-term battery performance.
 
-- guess the firmware version,
-- relocate corrections heuristically,
-- partially apply the correction set,
-- silently accept a near-match,
-- emit an artifact and label it B2.2 despite identity failure.
+### Excluded modifications
 
----
+B2.2 does not include the historical periodic mDNS bypass, MIN80, D3 or PM52 observers, FastPS experiments, additional debug instrumentation, EM3 experiments or deferred P04+ candidates.
 
-# Preimage validation
+Historical experiments involving those modifications must not be presented as tests of the current B2.2 build.
 
-The B2.2 reconstruction uses checked Stock preimages.
+## 7. OTA-Server Validation
 
-Conceptually:
-
-```text
-expected Stock bytes
-        |
-        v
-compare against actual input
-        |
-        +-- mismatch --> reject
-        |
-        v
-apply authorized transformation
-```
-
-The qualified reconstruction contains approximately:
-
-```text
-1,404 authorized Stock -> B2.2 transformation runs
-```
-
-This number describes binary reconstruction geometry.
-
-It does **not** represent:
-
-```text
-1,404 bugs
-```
-
-or:
-
-```text
-1,404 independent fixes
-```
-
-B2.2 still contains exactly nine selected correction components.
-
----
-
-# Output-integrity tests
-
-The final application is accepted only if it matches:
-
-```text
-Size:
-1,069,320 bytes
-
-SHA256:
-7ee593265c76abd8cd628a81133d4b1310c1ae24c9ebe2ca3f2c2948acfc64f9
-
-CRC32:
-42657D97
-```
-
-The final GBL is accepted only if it matches:
-
-```text
-Size:
-1,126,156 bytes
-
-SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-
-END CRC32:
-52A97051
-```
-
-The file written to disk is read back and verified again.
-
-Successful in-memory reconstruction alone is not considered sufficient.
-
----
-
-# Qualification coverage
-
-The underlying B2.2 build qualification included substantially broader component and integration testing than the public patcher regression suite.
-
-Recorded qualification includes:
-
-```text
-A1R:
-151 / 151
-
-C-C:
-512 + 10000
-
-B2:
-2060 + 102
-plus mixed/preemption cases
-
-MQTT:
-258
-
-Calibration Restore Guard:
-68 native
-66535 scalar
-104 queue
-30 countdown
-plus negative tests
-
-P01:
-128 + 6
-
-P02:
-90 + 480
-
-P03:
-128 native
-
-motor / B2 / P01:
-10 + 30
-
-sleep / PA8:
-48
-
-battery / OTA / boot:
-10002 + 2 + 4 + 3
-
-interfaces / flows:
-10 interactions
-13 flow groups
-```
-
-The B2.2 qualification process additionally established:
-
-```text
-multiple clean application constructions identical
-multiple GBL constructions byte-identical
-zero unexplained application differences
-zero unexplained container differences
-observer absence verified
-```
-
-These are qualification results for the selected integrated B2.2 build.
-
-They must not be interpreted as proof of long-term battery performance.
-
----
-
-# Historical v1.0 tests
-
-Earlier versions of this repository documented a two-patch firmware:
-
-```text
-Beacon-Recovery bypass
-+
-periodic mDNS restart bypass
-```
-
-That historical workflow produced:
-
-```text
-SHTRV-01_2.2.4_beacon_mdns_patch.gbl
-```
-
-and expected only two application-byte changes plus the updated GBL checksum.
-
-Those test results belong to the historical v1.0 patcher.
-
-They are **not** the acceptance criteria for:
-
-```text
-patch_firmware_v2.0.py
-```
-
-or:
-
-```text
-B2.2
-```
-
-In particular, the historical statement:
-
-```text
-exactly six bytes differ in the complete GBL
-```
-
-must not be applied to B2.2.
-
----
-
-# Historical mDNS tests
-
-The project previously tested a specific periodic connected-state mDNS restart bypass.
-
-Historical packet capture established that the targeted periodic mDNS activity could be suppressed.
-
-Historical testing also showed that Beacon Recovery could continue despite suppression of the periodic mDNS restart.
-
-This helped separate the two mechanisms.
-
-However:
-
-```text
-periodic mDNS bypass
-```
-
-is not included in B2.2.
-
-Those results remain historical research evidence only.
-
----
-
-# OTA server
-
-The current local OTA server is:
+The current OTA server is:
 
 ```text
 ota_server.py
 ```
 
-Current version:
+**Version:** 2.0, revision 1
+**HTTP identity:** `ShellyTRVOTA/2.0`
+**Required port:** TCP 80
 
-```text
-2.0
-```
-
-Current revision:
-
-```text
-1
-```
-
-Server identity:
-
-```text
-ShellyTRVOTA/2.0
-```
-
-The OTA server automatically expects:
+The server expects:
 
 ```text
 target/SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
 ```
 
-It independently validates that artifact before opening the HTTP server.
+Before serving firmware, it validates:
 
----
+- File existence and type
+- Exact file size
+- SHA-256 identity
+- Stored END CRC32
+- Independently calculated END CRC32
+- Expected END CRC32 value
 
-# OTA-server firmware validation
+If validation fails, the server does not start.
 
-Current expected GBL:
+### Confirmed tests
 
-```text
-Filename:
-SHTRV-01_2.2.4_B2.2_EXPERIMENTAL.gbl
+| Test | Result |
+|---|---|
+| Python syntax validation | Passed |
+| B2.2 firmware identity validation | Passed |
+| GBL END CRC32 verification | Passed |
+| TCP port 80 selection | Confirmed |
+| Server startup | Passed |
 
-Size:
-1,126,156 bytes
+### Network-test limitation
 
-SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
+The current B2.2-specific OTA-server revision was validated and started during a remote/VPN maintenance session.
 
-END CRC32:
-0x52A97051
-```
+A new complete LAN-side HTTP `200 OK` and `206 Partial Content` transfer test of that exact revision was not performed during that session.
 
-The OTA server checks:
+The HTTP/1.1 and Range implementations are present in the source. Historical OTA-server versions separately demonstrated full-file and Range transfers.
 
-- file existence,
-- file type,
-- exact size,
-- exact SHA-256,
-- stored END CRC32,
-- independently calculated END CRC32,
-- expected END CRC32.
+Those historical results must not be represented as newly executed v2.0 network tests.
 
-The HTTP server starts only after validation succeeds.
+Physical B2.2 OTA installation has nevertheless been demonstrated on real hardware.
 
----
+## 8. Physical Hardware Validation
 
-# OTA-server TCP-port behavior
+B2.2 was installed and executed on physical Shelly TRV Gen1 hardware.
 
-The current server intentionally supports:
-
-```text
-TCP port 80
-```
-
-for the Shelly TRV Gen1 OTA workflow.
-
-It does not automatically fall back to port 8000.
-
-Earlier project testing showed that a server on port 8000 could be reachable by another HTTP client while the expected TRV firmware retrieval did not occur as required.
-
-TCP port 80 produced the expected TRV OTA retrieval behavior.
-
-For this reason the current server fails if TCP port 80 cannot be used.
-
----
-
-# Current OTA-server startup test
-
-The current B2.2-specific OTA server was tested for local startup and firmware validation.
-
-Confirmed:
+The initial hardware canary successfully demonstrated:
 
 ```text
-Python syntax:       PASS
-
-Version:
-2.0 revision 1
-
-B2.2 file size:
-1,126,156 bytes
-
-B2.2 SHA256:
-912983973a5467241397b9dd967ee0039440c7d77780a2a97ee494b1a507860c
-
-GBL END CRC32:
-0x52A97051
-
-Firmware validation:
-PASSED
-
-Selected HTTP port:
-80
-
-Server startup:
-PASSED
-```
-
-The server successfully reached its waiting state.
-
----
-
-# Current OTA-server network-test boundary
-
-During the current v2.0 documentation update, the server was being accessed remotely through a VPN environment.
-
-A new end-to-end LAN HTTP transfer test was therefore not performed during that session.
-
-Accordingly, the current v2.0 test record does **not** claim a newly executed:
-
-```text
-HTTP 200 full-file network transfer
-```
-
-or:
-
-```text
-HTTP 206 Range network transfer
-```
-
-for the updated B2.2-specific server revision during that session.
-
-The HTTP/1.1 and Range implementations remain present in the server code.
-
-Historical OTA-server versions had separately demonstrated HTTP 200 and 206 transfer behavior, but those results must not be presented as newly executed v2.0 tests.
-
----
-
-# Physical B2.2 installation
-
-B2.2 has been installed and operated on physical Shelly TRV Gen1 hardware.
-
-The first B2.2 hardware canary successfully completed:
-
-```text
-OTA
-        |
-        v
-cold reboot
-        |
-        v
-Shelly 2.2.4 application boot
-        |
-        v
-FMAC 3.7.0
-        |
-        v
+OTA installation
+    ↓
+Application boot
+    ↓
+FMAC 3.7.0 initialization
+    ↓
 WF200 3.18.0 initialization
-        |
-        v
-WLAN scan / association
-        |
-        v
+    ↓
+Wi-Fi association
+    ↓
 DHCP
-        |
-        v
-calibration
-        |
-        v
-connected power save
-        |
-        v
-cloud connectivity
+    ↓
+Calibration
+    ↓
+Connected power-save operation
+    ↓
+Cloud connectivity
 ```
 
-This confirms real hardware execution of the qualified B2.2 artifact.
+The initial approximately 29-hour canary observation reported:
 
----
+| Metric | Value |
+|---|---:|
+| Reboot counter | 1 |
+| Reconnect counter | 1 |
+| Beacon error counter | 0 |
+| Desired Beacon Skip | 20 |
+| Real Beacon Skip | 21 |
+| Battery voltage | Approximately 4.027 V |
 
-# Initial B2.2 canary
+No additional unexpected reboot or reconnect was observed during that initial canary period.
 
-After approximately 29 hours, the initial B2.2 canary showed:
+This established successful short-term operation but did not establish long-term reliability.
+
+## 9. Six-Day Fleet Evaluation
+
+**Evaluation date:** November 9, 2026
+**B2.2 deployment:** November 2, 2026, approximately 18:55 local time
+**Elapsed test time:** Approximately 6.46 days
+
+### Device population
+
+The regular B2.2 monitoring fleet consists of six devices:
 
 ```text
-reboot_counter:       1
-reconnect_counter:    1
-beacon_err_counter:   0
-desired_beacon_skip:  20
-real_beacon_skip:     21
-battery:              99 %
-voltage:              approximately 4.027 V
+TRV .11
+TRV .61
+TRV .71
+TRV .77
+TRV .88
+TRV .97
 ```
 
-No unexpected additional reboot or reconnect was observed during that period.
+TRV .234 is excluded from the regular B2.2 battery and stability evaluation. It runs Stock firmware and is used for separate MQTT security testing.
 
-This represents positive short-term runtime evidence.
+TRV .61 was recharged during the observation period. Its battery measurements before and after charging must not be treated as one continuous discharge curve.
 
-It does not establish long-term battery behavior.
+### Battery results
 
----
+No severe battery depletion comparable to the historical Stock episodes was observed during the first 6+ days of the regular B2.2 fleet test.
 
-# B2.2 fleet rollout
+Four devices without a reported charging event in the compared snapshot sequence showed the following voltage changes:
 
-After the initial canary test, the physical test fleet was moved to B2.2 on:
+| Device | November 3 | November 9 | Change |
+|---|---:|---:|---:|
+| TRV .71 | 3.507 V | 3.487 V | −20 mV |
+| TRV .77 | 3.801 V | 3.782 V | −19 mV |
+| TRV .88 | 4.051 V | 4.029 V | −22 mV |
+| TRV .97 | 3.737 V | 3.721 V | −16 mV |
 
-```text
-2026-11-02
-approximately 18:55 local time
-```
+These measurements span approximately 5.4 days of available voltage snapshots, not the full 6.46-day deployment interval.
 
-The current test fleet contains seven physical TRV devices running B2.2.
+The observed voltage development is encouraging. It is not a direct measurement of current consumption, accumulated energy or remaining battery capacity.
 
-This means there is currently:
+### Historical Stock comparison
 
-```text
-no parallel Stock 2.2.4 control device
-```
+Historical Shelly Cloud data from January–February 2026 includes repeated original-firmware discharge episodes reaching an indicated 0% after approximately 5.8–6.5 days.
 
-in the active fleet.
+The historical data contains reported battery percentages, whereas the current B2.2 analysis also uses voltage measurements.
 
-Historical Stock and previous experimental snapshots remain available as reference data.
+The exact firmware build for every historical observation was not independently established.
 
-This limitation must be considered when interpreting later long-term results.
+There is no simultaneous matched Stock control group under equivalent conditions.
 
----
+Therefore, the comparison supports an encouraging observation, but not a controlled quantitative estimate of B2.2 battery-life improvement.
 
-# Post-rollout baseline
+## 10. Unexpected Reboots
 
-Immediately after the B2.2 fleet rollout, the devices established new baseline measurements.
+Unexpected automatic restarts are a documented B2.2 reliability issue.
 
-The important test purpose of this baseline is to provide a clean start point for:
+Multiple devices experienced restarts without manual intervention during fleet monitoring.
 
-- uptime,
-- reboot count,
-- reconnect count,
-- battery voltage,
-- displayed battery percentage,
-- beacon statistics,
-- subsequent long-term trend comparison.
+### Reboot counters
 
-The baseline is not itself evidence of battery improvement.
+| Device | November 3 | November 9 | Recorded change |
+|---|---:|---:|---:|
+| TRV .11 | 2 | 6 | +4 |
+| TRV .61 | 2 | 3 | +1 |
+| TRV .71 | 1 | 65 | +64 |
+| TRV .77 | 1 | 6 | +5 |
+| TRV .88 | 1 | 2 | +1 |
+| TRV .97 | 1 | 1 | 0 |
 
----
+**TRV .71 requires particular caution:** Its reboot counter increased from 1 to 65, but uptime evidence establishes only that at least one restart occurred. The counter change is not yet proof of 64 distinct reset events.
 
-# Automated battery and runtime monitoring
+The observed reboot events do not establish whether the underlying cause was a Watchdog timeout, software reset, CPU exception, power-related reset or a counting anomaly.
 
-Longer-term B2.2 behavior is monitored using the project's battery logger.
+### Planned investigation
 
-Depending on firmware support, the logger records fields including:
+The next investigation should examine:
 
-```text
-firmware version
-battery percentage
-battery voltage
-uptime
-Wi-Fi RSSI
-reboot information
-reconnect information
-desired beacon skip
-calculated real beacon skip
-beacon error / recovery counters
-```
+- EFM32 reset-cause handling (`RMU_RSTCAUSE`)
+- Watchdog initialization and feeding
+- Firmware sleep and wake transitions
+- Reboot-counter storage and update behavior
+- Potential interactions with the selected B2.2 corrections
 
-Unavailable fields are recorded as unavailable rather than inferred.
+A specific reset cause must not be claimed without direct evidence.
 
----
+### Beta interpretation
 
-# Battery percentage interpretation
+Despite the observed reboots, devices were reachable and operational after their observed restarts.
 
-The displayed Shelly battery percentage is not a coulomb counter.
+This supports continued voluntary beta evaluation, but it does not prove uninterrupted heating regulation during every restart.
 
-Static analysis established that it is derived from measured/cached battery voltage.
+The issue remains open and must be disclosed in the public release documentation.
 
-This has also been observed at runtime: displayed percentage values can rise without charging.
+## 11. Beacon-Recovery Monitoring
 
-Therefore:
+The available B2.2 snapshots showed no persistent Beacon-Recovery loop comparable to the previously documented problematic behavior.
 
-```text
-battery percentage
-```
+At the November 9 snapshot, the six regular devices reported a current Beacon-Recovery error counter of zero.
 
-must not be treated as a direct accumulated-energy measurement.
+However, this does not establish that no Beacon-Recovery error occurred throughout the test period.
 
-For short-term trend comparison, measured voltage is generally more useful than percentage alone.
+Counters may reset during device restarts or relevant state reinitialization. Debug logs contain only bounded recent history.
 
-Neither percentage nor voltage is a direct current measurement.
+The C-C correction also intentionally preserves Beacon Recovery when its evidence is fresh, valid and meets the recovery conditions.
 
----
+## 12. Measurement Limitations
 
-# Monitoring interpretation
+The project uses observational device telemetry rather than laboratory current-consumption measurements.
 
-Battery logger data is observational.
+Relevant limitations include:
 
-Direct comparison between different physical TRVs is affected by factors including:
+- Battery percentage is voltage-derived and is not a coulomb counter.
+- Battery voltage is influenced by temperature, load and cell characteristics.
+- Recharging invalidates continuous discharge comparisons.
+- Reboots can reset counters and diagnostic history.
+- Device activity, valve movement and WLAN conditions vary.
+- Historical Stock data does not provide a simultaneous matched control.
+- Short Debug logs cannot establish behavior across an entire multi-day interval.
 
-- battery-cell variation,
-- state of charge,
-- battery history,
-- battery voltage response,
-- valve activity,
-- thermostat activity,
-- room temperature,
-- Wi-Fi conditions,
-- individual hardware variation,
-- prior device history.
+Accordingly, observed low voltage loss cannot be converted directly into a guaranteed battery lifetime.
 
-For this reason, long-term results must be interpreted as trend evidence rather than laboratory-grade energy measurements.
+A longer observation period is required to evaluate whether the historical rapid-drain condition remains absent.
 
----
+## 13. Current Test Status
 
-# Evidence hierarchy
+| Area | Status |
+|---|---|
+| Supported Stock input identification | Confirmed |
+| Exact B2.2 reconstruction | Confirmed |
+| Application byte comparison | Passed |
+| GBL byte comparison | Passed |
+| Standalone reconstruction | Passed |
+| Automated patcher regression suite | 18 tests passed |
+| Fail-closed negative testing | Passed |
+| Selected component qualification | Recorded and completed |
+| OTA-server firmware validation | Passed |
+| OTA-server startup | Passed |
+| New v2.0 LAN HTTP 200/206 retest | Not completed in documented session |
+| Physical OTA installation | Confirmed |
+| Physical application boot | Confirmed |
+| WF200 3.18.0 initialization | Confirmed |
+| Wi-Fi / DHCP / cloud operation | Confirmed |
+| Six-day battery observation | Completed initial milestone |
+| Historical Stock-like severe drain | Not observed during initial B2.2 evaluation |
+| Unexpected automatic reboots | Observed; unresolved |
+| Long-term firmware stability | Not established |
+| Quantified battery-life improvement | Not established |
+| Complete historical drain root cause | Not conclusively proven |
 
-The project deliberately separates evidence types.
+## 14. Continuing Test Policy
 
-## Static reverse engineering
+The existing B2.2 fleet should remain on the same firmware and WLAN configuration where possible to preserve the value of the ongoing dataset.
 
-Used to establish:
+Continuing observations should include:
 
-- firmware control flow,
-- state relationships,
-- defect candidates,
-- instruction behavior,
-- ownership and lifecycle behavior.
+- Battery voltage and reported percentage
+- Device uptime
+- Reboot and reconnect counters
+- Beacon-Recovery statistics
+- Calibration state
+- Thermostat and valve behavior
+- Available Debug logs
+- Any future reset-cause information
 
-## Component qualification
+Further firmware corrections should be developed and qualified separately rather than silently introduced into the current B2.2 fleet.
 
-Used to establish:
+A modified firmware image represents a new candidate with a different binary identity.
 
-- correction semantics,
-- edge-case handling,
-- negative-case behavior,
-- interaction behavior.
+## 15. Historical Research and Security Boundaries
 
-## Deterministic reconstruction
+Earlier experiments involving Beacon-Recovery bypasses, periodic mDNS suppression, MIN80, observer firmware, B2.1 and other experimental builds remain historical research evidence.
 
-Used to establish:
+They are not acceptance tests for the current B2.2 firmware unless explicitly performed against that build.
 
-- exact Stock input identity,
-- expected preimages,
-- exact B2.2 output identity,
-- absence of unexplained reconstruction differences.
+The minimal MQTT PUBLISH guard included in B2.2 originates from a separate security investigation.
 
-## Physical runtime testing
+Sensitive reproduction details, exploit material and unpublished responsible-disclosure evidence do not belong in this public test documentation.
 
-Used to establish:
+No remote code execution or arbitrary-write capability has been demonstrated.
 
-- boot behavior,
-- WLAN operation,
-- WF200 initialization,
-- cloud operation,
-- thermostat operation,
-- calibration behavior,
-- runtime stability under tested conditions.
+## 16. Firmware Distribution
 
-## Battery monitoring
+No original, modified or extracted proprietary Shelly firmware images should be committed to this repository.
 
-Used to observe:
-
-- longer-term voltage trends,
-- displayed battery percentage,
-- uptime continuity,
-- reboot events,
-- reconnect events,
-- beacon statistics,
-- device-to-device trends.
-
-Each method answers a different question.
-
----
-
-# Examples of invalid inference
-
-The following reasoning is explicitly rejected:
-
-```text
-B2.2 hash is correct
-therefore
-battery drain is fixed
-```
-
-Incorrect.
-
----
-
-```text
-OTA transfer completed
-therefore
-firmware installed successfully
-```
-
-Incorrect without device-level verification.
-
----
-
-```text
-device booted successfully
-therefore
-long-term stability is proven
-```
-
-Incorrect.
-
----
-
-```text
-beacon_err_counter remains zero
-therefore
-battery lifetime is restored
-```
-
-Incorrect.
-
----
-
-```text
-battery percentage increased
-therefore
-battery was charged
-```
-
-Incorrect.
-
----
-
-```text
-seven B2.2 devices remain stable
-therefore
-the historical root cause has been proven
-```
-
-Incorrect.
-
----
-
-# Current test summary
-
-Current evidence supports:
-
-```text
-Exact Stock input identity:
-CONFIRMED
-
-v2.0 deterministic reconstruction:
-CONFIRMED
-
-Generated application byte-identical to qualified B2.2:
-CONFIRMED
-
-Generated GBL byte-identical to qualified B2.2:
-CONFIRMED
-
-Standalone patcher execution:
-CONFIRMED
-
-Fail-closed negative tests:
-CONFIRMED
-
-Automated v2.0 acceptance suite:
-18 tests PASS
-
-B2.2 application hash:
-CONFIRMED
-
-B2.2 GBL hash:
-CONFIRMED
-
-B2.2 END CRC32:
-CONFIRMED
-
-OTA-server B2.2 validation:
-CONFIRMED
-
-OTA-server v2.0 startup:
-CONFIRMED
-
-Current v2.0 LAN HTTP 200 re-test:
-NOT PERFORMED DURING REMOTE SESSION
-
-Current v2.0 LAN HTTP 206 re-test:
-NOT PERFORMED DURING REMOTE SESSION
-
-B2.2 physical installation:
-CONFIRMED
-
-B2.2 physical boot:
-CONFIRMED
-
-WF200 3.18.0 physical initialization:
-CONFIRMED
-
-WLAN association:
-CONFIRMED
-
-DHCP:
-CONFIRMED
-
-Cloud connectivity:
-CONFIRMED
-
-Connected power save:
-CONFIRMED
-
-Initial ~29 h canary:
-STABLE UNDER OBSERVED CONDITIONS
-
-B2.2 fleet rollout:
-ACTIVE
-
-Long-term stability:
-UNDER OBSERVATION
-
-Long-term battery behavior:
-UNDER OBSERVATION
-
-Quantified battery-life improvement:
-NOT ESTABLISHED
-
-Historical battery-drain root cause:
-NOT CONCLUSIVELY PROVEN
-```
-
----
-
-# Current long-term test policy
-
-During the current B2.2 fleet observation period, firmware and WLAN configuration should remain stable unless a concrete test requirement justifies a change.
-
-The objective is to avoid introducing unnecessary variables into the long-term dataset.
-
-Routine activities are therefore limited primarily to:
-
-```text
-status snapshots
-battery-logger collection
-runtime observation
-report generation
-```
-
-rather than further experimental firmware changes.
-
----
-
-# No active Stock control
-
-The current B2.2 fleet test does not include a simultaneously running Stock 2.2.4 control.
-
-This is an important limitation.
-
-Historical Stock measurements are available, but they are not equivalent to a concurrent matched control.
-
-Future battery conclusions must account for this distinction.
-
----
-
-# Test fixtures and copyright
-
-No proprietary Shelly firmware images should be committed to this repository.
-
-This includes:
-
-- original Shelly GBL files,
-- generated patched GBL files,
-- extracted proprietary application binaries,
-- bootloader images,
-- radio firmware blobs extracted from proprietary packages,
-- large reusable proprietary binary fragments.
-
-Local working artifacts remain under:
+Local firmware artifacts belong under:
 
 ```text
 target/
 ```
 
-and are excluded from version control.
+The repository may contain source code, reconstruction metadata, hashes, validation logic and documentation.
 
-The repository should contain only the code, metadata, documentation, hashes, and reconstruction information required for the project workflow.
+Firmware images must remain excluded from version control.
 
----
+## Conclusion
 
-# Security-sensitive testing
+**B2.2 Beta is a deterministically reconstructable firmware build containing nine selected qualified corrections.**
 
-B2.2 contains a minimal MQTT PUBLISH guard.
+Its application and GBL have been reproduced byte-for-byte from the exact supported Stock 2.2.4 firmware.
 
-The detailed MQTT security investigation is maintained separately from the public Battery Drain project.
+The initial six-day hardware evaluation shows encouraging battery behavior: the previously documented severe, rapid battery depletion has not recurred in the regular B2.2 fleet.
 
-Public test documentation must not include unpublished:
+At the same time, unexpected automatic restarts remain a documented and unresolved reliability issue.
 
-- exploit payloads,
-- attack scripts,
-- responsible-disclosure evidence,
-- sensitive reproduction details.
-
-Current public conclusions must not claim:
-
-```text
-remote code execution
-```
-
-or:
-
-```text
-arbitrary write
-```
-
-because neither has been demonstrated.
-
----
-
-# Historical evidence
-
-Historical experiments remain valid evidence for the configuration actually tested at that time.
-
-They must not be retrospectively renamed as B2.2 tests.
-
-Examples include:
-
-```text
-historical Patch B-only mDNS tests
-historical Beacon-Recovery bypass tests
-MIN80 experiments
-D3 observer tests
-B2.1
-B2.1_OBS
-earlier A1-based builds
-```
-
-These results remain part of the research history.
-
-They are not part of the current v2.0 patcher acceptance criteria.
-
----
-
-# Current battery-testing conclusion
-
-The project has identified and qualified multiple concrete firmware defects and integrated selected corrections into B2.2.
-
-The current physical evidence establishes that B2.2 operates on real Shelly TRV Gen1 hardware under the tested conditions.
-
-However:
-
-```text
-battery-life improvement:
-not yet established
-```
-
-and:
-
-```text
-historical battery-drain root cause:
-not conclusively proven
-```
-
-Long-term B2.2 observation remains necessary.
-
----
-
-# Future tests
-
-Current or future testing may include:
-
-- continued multi-day and multi-week B2.2 fleet observation,
-- reboot and reconnect tracking,
-- continued battery-voltage monitoring,
-- controlled valve-operation observation,
-- weaker and stronger Wi-Fi conditions where scientifically useful,
-- investigation of any first observed B2.2 failure,
-- additional deterministic patcher regression testing,
-- OTA-server network retesting when directly present on the target LAN,
-- comparison against preserved historical Stock datasets.
-
-A new firmware correction should not be introduced into the active B2.2 fleet merely to expand the test matrix.
-
-Any new correction would create a new firmware candidate requiring its own qualification and identity.
-
----
-
-# Current research boundary
-
-The current strongest defensible statement is:
-
-```text
-B2.2 is an exact, deterministically reconstructable,
-observer-free integrated experimental firmware containing
-nine selected qualified corrections.
-
-Its application and GBL identities are reproducible
-byte-for-byte from the supported Stock 2.2.4 input.
-
-B2.2 has successfully operated on physical Shelly TRV Gen1
-hardware and is currently undergoing longer-term fleet testing.
-
-Long-term battery-life improvement and the historical
-Battery Drain root cause remain unproven.
-```
-
-This distinction is intentional and should be preserved in all test documentation.
+**The results support continued beta testing. They do not establish fully stable operation, a guaranteed battery-life improvement or a conclusively proven historical battery-drain root cause.**
