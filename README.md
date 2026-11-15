@@ -13,7 +13,7 @@
   <a href="https://github.com/AbleMonster/Shelly-TRV-Gen1-2.2.4-patcher"><img alt="Patcher v2.0" src="https://img.shields.io/badge/Patcher-v2.0-2563eb?style=flat-square"></a>
   <img alt="Firmware B2.2 Beta" src="https://img.shields.io/badge/Firmware-B2.2_Beta-f59e0b?style=flat-square">
   <img alt="Supported Stock 2.2.4" src="https://img.shields.io/badge/Supported-Stock_2.2.4-16a34a?style=flat-square">
-  <img alt="Hardware Test 6+ Days" src="https://img.shields.io/badge/Hardware_Test-6%2B_Days-2563eb?style=flat-square">
+  <img alt="Hardware Test 12+ Days" src="https://img.shields.io/badge/Hardware_Test-12%2B_Days-2563eb?style=flat-square">
 </p>
 
 <p align="center">
@@ -27,9 +27,9 @@
 
 > **B2.2 Beta – November 2026**
 >
-> During more than six days of hardware testing, the severe battery depletion previously documented with original Shelly firmware has not been observed in the regular B2.2 test fleet.
+> During more than twelve days of hardware testing, the severe battery depletion previously documented with original Shelly firmware has not recurred as a complete discharge to an indicated 0% in the regular B2.2 test fleet.
 >
-> **Known issue:** Unexpected automatic reboots have occurred on several devices. Their cause remains under investigation.
+> **Known issue:** Unexpected automatic reboots have occurred on several devices. Their cause remains under investigation. One device has also shown a recent faster battery-voltage decline.
 >
 > B2.2 is beta firmware, not an officially supported Shelly release or a proven permanent solution to every battery-drain issue.
 
@@ -51,8 +51,8 @@ Our current B2.2 testing provides an initial comparison using the same hardware 
 
 | Observation | Historical Stock firmware | B2.2 Beta |
 |---|---|---|
-| Severe battery drain | Repeatedly observed within approximately 6 days | Not observed during the first 6+ days |
-| Battery behavior | Rapid depletion in documented episodes | Relatively stable voltage in current snapshots |
+| Severe battery drain | Repeatedly observed within approximately 6 days | No complete historical-style depletion observed during 12+ days |
+| Battery behavior | Rapid depletion in documented episodes | Relatively gradual voltage decline on three comparable devices; one recent anomaly |
 | Beacon Recovery | Recurring problematic Recovery episodes documented | No comparable persistent Recovery loop visible in available observations |
 | Thermostat operation | Normal functionality, but battery issues on some devices | Operational in testing, including recovery after unexpected restarts |
 | Stability | Not established by the historical battery data | Unexpected automatic reboots observed |
@@ -76,38 +76,44 @@ All devices were running original Shelly firmware during these historical episod
 
 ### B2.2 Beta
 
-![B2.2 battery voltage development](docs/assets/trv_b22_voltage_readme.png)
+![B2.2 long-term battery voltage development](docs/assets/trv_b22_long_term_voltage_all_points.png)
 
-**Battery-voltage measurements collected from November 3–9, 2026.**
+**Battery-voltage measurements collected from November 3–15, 2026.**
 
 Four continuously comparable devices showed the following voltage changes:
 
 | Device | Voltage change |
 |---|---:|
-| TRV .71 | −20 mV |
-| TRV .77 | −19 mV |
-| TRV .88 | −22 mV |
-| TRV .97 | −16 mV |
+| TRV .71 | −41 mV |
+| TRV .77 | −98 mV |
+| TRV .88 | −39 mV |
+| TRV .97 | −29 mV |
 
-These readings cover approximately 5.4 days of available voltage snapshots. The overall B2.2 firmware test had exceeded six days by November 9.
+These readings cover approximately 11.51 days of available voltage snapshots. The overall B2.2 firmware test had exceeded twelve days by November 15.
 
-**No comparable rapid battery depletion was observed.**
+Three devices continued to show relatively gradual voltage declines.
+
+**TRV .77 showed an additional 75 mV voltage decline between November 11 and November 15.** This requires further observation before its cause can be established.
+
+No complete recurrence of the historical rapid depletion to an indicated 0% was observed in the regular B2.2 fleet during this period.
 
 The graphs use different measurements: historical firmware-reported battery percentages versus current battery voltage. They are not directly equivalent measurements of remaining battery capacity.
 
 There is also no simultaneous, matched Stock control group. The results are encouraging but do not establish a quantified improvement in battery lifetime or identify a single root cause.
 
+For the complete measurement series, see the [Long-Term Battery and Stability Report](docs/B2.2_long_term_battery_stability_report.md).
+
 ## Current Hardware Test Status
 
-**Last evaluated: November 9, 2026**
+**Last evaluated: November 15, 2026 – approximately 12.61 days since deployment**
 
 The regular B2.2 observation fleet consists of six Shelly TRV Gen1 devices.
 
-A separate device running Stock firmware for MQTT security research is excluded from this evaluation. One B2.2 device was recharged during testing, so its battery measurements are evaluated from a separate baseline.
+A separate device running Stock firmware for MQTT security research is excluded from the regular B2.2 evaluation. Battery charging and voltage discontinuities affect the comparability of two B2.2 devices, so their battery measurements are evaluated from separate baselines.
 
 ### Positive observations
 
-- No historical Stock-like massive battery depletion during the first six days.
+- No complete recurrence of the historical Stock-like rapid battery depletion during the first twelve days.
 - Normal Wi-Fi and cloud connectivity observed during operation.
 - Normal temperature measurement, calibration, and thermostat functions observed.
 - No persistent Beacon-Recovery loop visible in the available B2.2 debug observations.
@@ -117,11 +123,13 @@ A separate device running Stock firmware for MQTT security research is excluded 
 
 Several test devices have restarted automatically without user intervention.
 
-The underlying reset cause has not yet been established. A significant reboot-counter anomaly was also observed on one device.
+The underlying reset cause has not yet been established. Significant reboot-counter increases were also observed on two devices, but the available measurements do not establish the exact number of individual restarts.
+
+One device, TRV .77, also showed an unexplained faster battery-voltage decline during the most recent observation interval.
 
 Devices were reachable and operational again following their observed restarts, but uninterrupted thermostat control during each reset has not been independently verified.
 
-**These restart issues are documented and remain under active investigation.**
+**These issues are documented and remain under active investigation.**
 
 B2.2 is therefore offered for voluntary beta testing, not as a fully validated stable firmware release.
 
@@ -250,7 +258,7 @@ The Shelly firmware version string remains unchanged at `2.2.4`. The `/status` e
 ## Known Limitations
 
 - **Automatic restarts:** Observed on several devices; root cause unknown.
-- **Battery lifetime:** Initial six-day results are positive, but normal long-term battery lifetime has not yet been established.
+- **Battery lifetime:** Results after 12+ days are encouraging, but normal long-term battery lifetime has not yet been established. One device shows an unexplained recent voltage decline.
 - **Root cause:** Multiple firmware defects may contribute to excessive battery consumption. Their individual contributions have not been quantified.
 - **Firmware support:** Only the exact supported Stock 2.2.4 build can be used.
 - **Official support:** This is an independent community project, not a Shelly firmware release.
@@ -261,6 +269,7 @@ The Shelly firmware version string remains unchanged at `2.2.4`. The `/status` e
 |---|---|
 | [User Guide](USER_GUIDE.md) | Installation and troubleshooting |
 | [Technical Details](docs/technical-details.md) | Firmware corrections and reverse engineering |
+| [Long-Term Battery and Stability Report](docs/B2.2_long_term_battery_stability_report.md) | Ongoing hardware measurements and reliability observations |
 | [OTA Server](docs/ota_server.md) | Local OTA server and HTTP operation |
 | [Testing](tests/README.md) | Reconstruction and qualification testing |
 | [Security Policy](SECURITY.md) | Reporting security vulnerabilities |
